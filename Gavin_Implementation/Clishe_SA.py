@@ -46,6 +46,8 @@ def cost(data: dict) -> int:
     :return: Total Manhattan wirelength summed over all nets.
     :rtype: int
     """
+    # a potential optimization once the rest of the algorithm is written might be to instead only recompute the length of nets connected to a moved cell. 
+
     total_length = 0                                     # initializes length (cost) to 0
     for net in data['nets']:
         cell_i, cell_j = net['cells']                    # grabs the two connected cells on each net
@@ -58,5 +60,18 @@ def cost(data: dict) -> int:
     
     return total_length
 
+def perturb(curr_solution: dict) -> dict:
+    # function that takes the current solution and makes a single move (however that is defined), returning the resulting solution. 
+    # my current approach (might be quite intensive though) is to find the net with the highest cost (assuming at least one of the cells
+    # is movable), then move one of the cells to the nearest available cell (movable or not) to the other one. I do not think this move function
+    # should be deterministic. Because if it is, then you run the risk of every single iteration in num_moves_per_step attempting the exact same
+    # move. At lower temperatures, this move might be rejected every single time, which is a waste. So maybe instead of choosing THE highest cost net,
+    # it instead proababalistically chooses nets, with higher weights applied to nets of larger cost. Perhaps a first approach might assign weights as 
+    # net_cost/total_cost. It may not matter, but this approach does normalize the weights such that they sum to 1. This is what i did in my undergrad research
 
-print(cost(data))
+    
+
+    
+
+
+
