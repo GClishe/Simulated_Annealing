@@ -32,8 +32,8 @@ from Gavin_Implementation.Place_Benchmarks.Place_5 import data
 
 def cool(T: int) -> int: 
     # defines the cooling schedule for the temperature T
-    T = 0.95*T
-    return T
+    return 0.95*T
+
 
 def cost(data: dict) -> int:
     """
