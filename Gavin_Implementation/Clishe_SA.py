@@ -75,7 +75,7 @@ def perturb(data: dict) -> dict:
     nets = []
     weights=[]
     max_length = 2*(data['grid_size'] + 1)               # nets will be weighted based on their length compared to the max length. There is no need for the weights to be normalized, so we do not need to weight them based on their length compared to total cost. 
-    for net in data['nets']:
+    for net in data['nets']:                   
         cell_i, cell_j = net['cells']                    # grabs the two connected cells on each net
 
         x_i, y_i = data['cells'][cell_i]['position']     # grabs the coordinates associated with cell_i in the data['cells'] dictionary
@@ -84,10 +84,15 @@ def perturb(data: dict) -> dict:
         wire_length = abs(x_i - x_j) + abs(y_i - y_j)
 
         net['length'] = wire_length
-        net['weight'] = wire_length/max_length
-        weights.append(net['weight'])
+        net['weight'] = wire_length/max_length           
+        weights.append(net['weight'])                   #TODO see comment below. These two lines should take place in a separate loop that only looks at nets with movable cells. 
         nets.append(net)
     
+    #TODO modify this chosen_net variable. It must only choose from nets that have at least one movable cell. A better plan is to ensure that nets and weights only contain nets that have movable cells.
     chosen_net = choices(nets, weights=weights)          # chooses a net probabalistically based on its weight relative to the other nets. 
+
+
+
+
 
     
