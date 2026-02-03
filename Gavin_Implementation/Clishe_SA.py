@@ -1,4 +1,5 @@
 from Gavin_Implementation.Place_Benchmarks.Place_5 import data
+from random import random, choices
 
 ##################################### Example placement data ############################
 # data = {
@@ -60,18 +61,33 @@ def cost(data: dict) -> int:
     
     return total_length
 
-def perturb(curr_solution: dict) -> dict:
+def perturb(data: dict) -> dict:
     # function that takes the current solution and makes a single move (however that is defined), returning the resulting solution. 
     # my current approach (might be quite intensive though) is to find the net with the highest cost (assuming at least one of the cells
     # is movable), then move one of the cells to the nearest available cell (movable or not) to the other one. I do not think this move function
     # should be deterministic. Because if it is, then you run the risk of every single iteration in num_moves_per_step attempting the exact same
     # move. At lower temperatures, this move might be rejected every single time, which is a waste. So maybe instead of choosing THE highest cost net,
-    # it instead proababalistically chooses nets, with higher weights applied to nets of larger cost. Perhaps a first approach might assign weights as 
-    # net_cost/total_cost. It may not matter, but this approach does normalize the weights such that they sum to 1. This is what i did in my undergrad research
+    # it instead probablistically chooses nets, with higher weights applied to nets of larger cost. Perhaps a first approach might assign weights as 
+    # net_cost/total_cost (or something else)
 
     
+    # the code below reuses the same code in the cost function. Once I have an implementation for each part of the SA algorithm, I will rewrite to remove repeated code.
+    nets = []
+    weights=[]
+    max_length = 2*(data['grid_size'] + 1)               # nets will be weighted based on their length compared to the max length. There is no need for the weights to be normalized, so we do not need to weight them based on their length compared to total cost. 
+    for net in data['nets']:
+        cell_i, cell_j = net['cells']                    # grabs the two connected cells on each net
+
+        x_i, y_i = data['cells'][cell_i]['position']     # grabs the coordinates associated with cell_i in the data['cells'] dictionary
+        x_j, y_j = data['cells'][cell_j]['position']     # same but for cell_j
+
+        wire_length = abs(x_i - x_j) + abs(y_i - y_j)
+
+        net['length'] = wire_length
+        net['weight'] = wire_length/max_length
+        weights.append(net['weight'])
+        nets.append(net)
+    
+    chosen_net = choices(nets, weights=weights)          # chooses a net probabalistically based on its weight relative to the other nets. 
 
     
-
-
-
