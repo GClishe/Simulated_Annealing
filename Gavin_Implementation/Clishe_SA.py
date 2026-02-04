@@ -101,7 +101,44 @@ def perturb(data: dict) -> dict:
     # Now we need to randomly choose either one of the movable cells on that net. If only one cell is movable, we must choose that one. We do this with a mask of movable cells        
     movable_cell_mask = [data['cells'][cell_name]['type'] == 'MOVABLE' for cell_name in chosen_net['cells']] # creates a [True/False, True/False] mask describing cells that are movable or not
     movable_cells = np.array(chosen_net['cells'])[movable_cell_mask] # uses the mask to create an array that contains the movable cell(s) on that net. len(movable_cells) is either 1 or 2.
-    choices(movable_cells)                                           # randomly chooses one of the cells in movable_cells
+    choices(movable_cells)[0]                                         # randomly chooses one of the cells in movable_cells. choices(movable_cells) has type list, so we choose index 0 to extract the string.
     
 
+chosen_net = data['nets'][1]
 
+# Now we need to randomly choose either one of the movable cells on that net. If only one cell is movable, we must choose that one. We do this with a mask of movable cells        
+movable_cell_mask = [data['cells'][cell_name]['type'] == 'MOVABLE' for cell_name in chosen_net['cells']] # creates a [True/False, True/False] mask describing cells that are movable or not
+movable_cells = np.array(chosen_net['cells'])[movable_cell_mask] # uses the mask to create an array that contains the movable cell(s) on that net. len(movable_cells) is either 1 or 2.
+cell_to_move = choices(movable_cells)[0]                         # randomly selects one of the cells in movable_cells. choices(movable_cells) has type list, so we choose index 0 to extract the string.   
+
+#Now I want to move that cell to be close to its net-neighbor (target_cell). 
+for cell in chosen_net['cells']:
+    if cell != cell_to_move:
+        target_cell = cell          # the cell on chosen_net that will not be moved is the target cell.
+
+
+def search_ring(target_coordinates: tuple) -> tuple:
+    """
+    Find nearest available cell to the target coordinate. 
+    Returns coordinate of available cell and the length of the resulting net.
+    
+    :param target_coordinates: Coordinates of target cell
+    :type target_coordinates: tuple
+    :return: (i,j,k), where i,j are coordinates of nearest available cell and k is length of net.  
+    :rtype: tuple
+    """
+
+    # one potential implementation here is this: let the target coordinates be (i,j). 
+    # All of the cells that are 1 unit away have coordinates in the set  (i,j +- 1) U (i +- 1, j).
+    # All of the cells that are 2 units away have coordinates in the set (i +- 1, j +- 1) U (i, j +- 2) U (i +- 2, j)
+    # All of the cells that are 2 units away have coordinates in the set (i +- 1, j +- 2) U (i +- 2, j +- 1) U (i, j +- 3) U (i +- 3, j)
+    # All of the cells that are 4 units away have coordinates in the set (i +- 2, j +- 2) U (i +- 3, j +- 1) U (i +- 1, j +- 3) U (i +- 4, j) U (i, j +- 4)
+
+    # Notice that the values being added to i and j in each "ring" sum to the value of the ring (naturally).
+    # In other words, all candidate cells in a particular ring have coordinates (i+x, j+y), where the absolute value of x and y add up to the value of the ring. 
+    # Therefore, we need to find out all the ways to sum two numbers to the value of the ring. 
+    # We can generate such a list by starting with X = val of ring, Y = 0, then X -= 1, Y += 1, then X -= 2 & Y += 2, etc until X and Y are 0 and val of ring, respectively.
+    # Then for each X,Y pair in that list, we look at (+X,+Y), (+X, -Y), (-X,+Y), and (-X,-Y). If that coordinate is out of bounds (probably i+X or j+Y greater than grid_size) or
+    # if that coordinate is locked, then we skip. One option is to return the very first available cell, starting with ring 1, then ring 2, then ring 3, etc until ring grid_size. 
+    # The other option, which is probably better, is to find all available cells in ring 1 (if any exist, if not then in ring 2, if not that then in ring 3, etc.) and randomly 
+    # return one of them. 
