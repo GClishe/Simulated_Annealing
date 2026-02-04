@@ -1,5 +1,6 @@
 from Gavin_Implementation.Place_Benchmarks.Place_5 import data
 from random import random, choices
+import numpy as np
 
 ##################################### Example placement data ############################
 # data = {
@@ -95,11 +96,12 @@ def perturb(data: dict) -> dict:
     # choose a net probabilistically based on its weight relative to the other nets. 
     # because `nets` and `weights` contains only nets with movable cells, chosen_net is also guaranteed
     # to have at least one movable cell
-    chosen_net = choices(nets, weights=weights)         
+    chosen_net = choices(nets, weights=weights) 
 
-    # now we need to select which cell to move.
-    [data['cells']]
-
-chosen_net = data['nets'][0]
-[data['cells'][cell_name]['type'] == 'MOVABLE' for cell_name in chosen_net['cells']]
+    # Now we need to randomly choose either one of the movable cells on that net. If only one cell is movable, we must choose that one. We do this with a mask of movable cells        
+    movable_cell_mask = [data['cells'][cell_name]['type'] == 'MOVABLE' for cell_name in chosen_net['cells']] # creates a [True/False, True/False] mask describing cells that are movable or not
+    movable_cells = np.array(chosen_net['cells'])[movable_cell_mask] # uses the mask to create an array that contains the movable cell(s) on that net. len(movable_cells) is either 1 or 2.
+    choices(movable_cells)                                           # randomly chooses one of the cells in movable_cells
     
+
+
