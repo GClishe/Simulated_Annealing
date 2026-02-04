@@ -83,16 +83,23 @@ def perturb(data: dict) -> dict:
 
         wire_length = abs(x_i - x_j) + abs(y_i - y_j)
 
+        # adds length and weight as parameters attached to each net
         net['length'] = wire_length
-        net['weight'] = wire_length/max_length           
-        weights.append(net['weight'])                   #TODO see comment below. These two lines should take place in a separate loop that only looks at nets with movable cells. 
-        nets.append(net)
+        net['weight'] = wire_length/max_length 
+
+        if any(data['cells'][cell_name]['type'] == 'MOVABLE' for cell_name in net['cells']): # checks if either of the cells on this net are movable
+            # if either of the cells are movable, add the net to the `nets` list (and its weight to the `weights` list)
+            weights.append(net['weight'])         
+            nets.append(net)
     
-    #TODO modify this chosen_net variable. It must only choose from nets that have at least one movable cell. A better plan is to ensure that nets and weights only contain nets that have movable cells.
-    chosen_net = choices(nets, weights=weights)          # chooses a net probabalistically based on its weight relative to the other nets. 
+    # choose a net probabilistically based on its weight relative to the other nets. 
+    # because `nets` and `weights` contains only nets with movable cells, chosen_net is also guaranteed
+    # to have at least one movable cell
+    chosen_net = choices(nets, weights=weights)         
 
+    # now we need to select which cell to move.
+    [data['cells']]
 
-
-
-
+chosen_net = data['nets'][0]
+[data['cells'][cell_name]['type'] == 'MOVABLE' for cell_name in chosen_net['cells']]
     
