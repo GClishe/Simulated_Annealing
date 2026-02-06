@@ -1,6 +1,12 @@
-from Gavin_Implementation.Place_Benchmarks.Place_5 import data
+from Gavin_Implementation.Place_Benchmarks.Place_25 import data
 import random
 import numpy as np
+import math
+
+#matplotlib is used for visualization/debugging. I do not expect to need it in the final result
+import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
+
 print(data)
 ##################################### Example placement data ############################
 # data = {
@@ -62,7 +68,7 @@ def cost(data: dict) -> int:
     
     return total_length
 
-
+# search_ring is essentially a helper function designed for use in the perturb() function. 
 def search_ring(data: dict, target_coordinates: tuple[int, int], grid_size: int, seed: int = None) -> tuple[int, int]:
     """
     Searches outward from a target coordinate in Manhattan distance "rings" and returns
@@ -113,7 +119,6 @@ def search_ring(data: dict, target_coordinates: tuple[int, int], grid_size: int,
             return rng.choice(tuple(candidate_moves))                               # choose a random value in candidate_moves (converted to tuple first, as .choice doesnt work with sets) according to the seed. 
 
     raise ValueError("There are no available cells. Either all cells are locked or grid_size is invalid.")
-
 
 def perturb(data: dict, seeds: list[int, int, int] = [None, None, None]) -> dict:
     """
@@ -172,26 +177,111 @@ def perturb(data: dict, seeds: list[int, int, int] = [None, None, None]) -> dict
 
     rng_cell = random.Random(seeds[1])
     cell_to_move = rng_cell.choices(list(movable_cells), k=1)[0]                                              # randomly chooses one of the cells in movable_cells. choices(...) returns a list, so [0] extracts the string.
-    cell_to_move_original_coords = data['cells'][cell_to_move]['position']
+    cell_to_move_original_coords = data['cells'][cell_to_move]['position']                                    # original coordinates of the cell we are moving. This will be useful for swapping if the new position is occupied by a movable cell. 
 
     # Now I want to move that cell to be close to its net-neighbor (target_cell).
     for cell in chosen_net['cells']:
         if cell != cell_to_move:
             target_cell = cell                    # the cell on chosen_net that will not be moved is the target cell.
 
+    # now find the coordinates of the new position of cell_to_move
     new_coords = search_ring(
         data=data,
         target_coordinates=data['cells'][target_cell]['position'],
         grid_size=data['grid_size'],
         seed=seeds[2]
-    )  # finds the coordinates of the new position of cell_to_move
+    ) 
 
-    # Now we need to actually move this cell to the new coords. First step will be to check if the new coords are occupied. If so, swap them.
+    # ow we need to actually move this cell to the new coords. First step will be to check if the new coords are occupied. If so, swap them.
     for cell in data['cells'].values():
         if new_coords == cell['position']:
             cell['position'] = cell_to_move_original_coords     # moves the cell occupying the new coordinates to the old position of the cell we are moving
 
     data['cells'][cell_to_move]['position'] = new_coords        # updates the cell we are moving to be in the new position.
+    data['cells'][cell_to_move]['fixed'] = True                 # Fixes the position of the moved cell (but not the cell that used to be there, if one existed)
 
     return data
 
+def accept_move(d_cost: int, T: int, k: int, seed: int) -> bool:
+    """
+    Decides whether or not to accept a proposed move. A move that does not increase cost (d_cost <= 0) is always
+    accepted. A move that increases cost is accepted probabilistically according to the boltzmann factor
+    exp(-d_cost / (k * T))
+    
+    :param d_cost: Change in cost resulting from the proposed move
+                   (new_cost - current_cost).
+    :type d_cost: int
+    :param T: Current annealing temperature. Higher values increase the
+              probability of accepting worse moves.
+    :type T: int
+    :param k: Scaling factor that controls sensitivity to cost increases.
+    :type k: int
+    :param seed: Seed for the random number generator to ensure reproducible
+                 decisions.
+    :type seed: int
+    :return: True if the move is accepted, False otherwise.
+    :rtype: bool
+    """
+    if d_cost <= 0:
+        return True
+    boltz = math.exp(-1*d_cost / (k*T))
+    r = random.Random(seed).random()        # chooses random number between 0 and 1 with a seed
+    if r < boltz:
+        return True
+    else: 
+        return False
+
+
+#below is a purely chatgpt generated code specifically designed to test my perturb() function. I will be removing this function in the final version. 
+def plot_placement(data, *, show_nets=True, label_cells=True, title=None):
+    """
+    Plot an NxN placement grid with shaded occupied cells and optional net lines.
+    Coordinates are assumed to be integer cell indices with (0,0) at bottom-left.
+    """
+    N = data["grid_size"]
+
+    fig, ax = plt.subplots(figsize=(6, 6))
+
+    # --- grid lines (cell boundaries) ---
+    for k in range(N + 1):
+        ax.plot([k, k], [0, N], linewidth=1)
+        ax.plot([0, N], [k, k], linewidth=1)
+
+    # --- occupied cells ---
+    for name, info in data["cells"].items():
+        x, y = info["position"]
+        ax.add_patch(Rectangle((x, y), 1, 1, alpha=0.35))  # no explicit color
+        if label_cells:
+            ax.text(x + 0.5, y + 0.5, name, ha="center", va="center", fontsize=8)
+
+    # --- nets (center-to-center) ---
+    if show_nets and "nets" in data:
+        for net in data["nets"]:
+            a, b = net["cells"]
+            xa, ya = data["cells"][a]["position"]
+            xb, yb = data["cells"][b]["position"]
+            ax.plot([xa + 0.5, xb + 0.5], [ya + 0.5, yb + 0.5],
+                    linestyle="--", linewidth=1, alpha=0.7)
+
+    # --- axes formatting ---
+    ax.set_xlim(0, N)
+    ax.set_ylim(0, N)
+    ax.set_aspect("equal", adjustable="box")
+    ax.set_xticks(range(N))
+    ax.set_yticks(range(N))
+    ax.set_xlabel("x")
+    ax.set_ylabel("y")
+    ax.set_title(title or "Placement (occupied cells + nets)")
+    plt.show()
+
+
+
+T_min = 0.1
+NUM_MOVES_PER_T_STEP = 250
+
+currSolution = data
+T = 40_000
+while T > T_min:
+    for _ in NUM_MOVES_PER_T_STEP:
+        nextSol = perturb(currSolution)
+        
