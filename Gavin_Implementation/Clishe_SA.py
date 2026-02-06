@@ -1,8 +1,9 @@
-from Gavin_Implementation.Place_Benchmarks.Place_5 import data
+from Gavin_Implementation.Place_Benchmarks.Place_100 import data
 import random
 from copy import deepcopy
 import numpy as np
 import math
+import time
 
 #matplotlib is used for visualization/debugging. I do not expect to need it in the final result
 import matplotlib.pyplot as plt
@@ -286,7 +287,11 @@ def unfix_all(state: dict) -> None:
             cell['fixed'] = False
 
 
-MASTER_SEED = 12345
+
+start_time = time.perf_counter()
+print("Starting...")
+
+MASTER_SEED = None
 master = random.Random(MASTER_SEED) 
 
 # random.Random(MASTER_SEED) constructs an RNG object whose output depends (deterministically) on MASTER_SEED.
@@ -326,8 +331,7 @@ while T > T_min:
         try:
             nextSol = perturb(deepcopy(currSolution), seeds=[s1, s2, s3])
         except ValueError:
-            print(f"Iteration {i} at T={T} ran out of unfixed cells. "
-                  f"Best cost so far: {bestCost}. Unfixing and moving to next T.")
+            #print(f"Iteration {i} at T={T} ran out of unfixed cells. Best cost so far: {bestCost}. Unfixing and moving to next T.")
             break
 
         next_cost = cost(nextSol)
@@ -336,10 +340,15 @@ while T > T_min:
         if accept_move(d_cost, T, k=1, seed=s4):
             currSolution = nextSol
 
-        if i == NUM_MOVES_PER_T_STEP - 1:
-            print(f"{NUM_MOVES_PER_T_STEP} iterations at T={T} reached. "
-                  f"Best cost so far: {bestCost}. Unfixing and moving to next T.")
+        #if i == NUM_MOVES_PER_T_STEP - 1:
+            #print(f"{NUM_MOVES_PER_T_STEP} iterations at T={T} reached. Best cost so far: {bestCost}. Unfixing and moving to next T.")
 
     unfix_all(currSolution)
     T = cool(T)
 
+print(bestCost)
+#plot_placement(bestSolution)
+
+end_time = time.perf_counter()
+execution_time = end_time - start_time
+print(f"End. Execution time: {execution_time} seconds")
