@@ -117,14 +117,14 @@ for cell in chosen_net['cells']:
         target_cell = cell          # the cell on chosen_net that will not be moved is the target cell.
 
 
-def search_ring(data: dict, target_coordinates: tuple[int, int], grid_size: int) -> tuple[int, int]:
+def search_ring(data: dict, target_coordinates: tuple[int, int], grid_size: int, seed: int = None) -> tuple[int, int]:
     """
     Searches outward from a target coordinate in Manhattan distance "rings" and returns
     a randomly selected available (not locked, in-bounds) from the nearest ring. 
 
     First searches ring of Manhattan distance of 1 from the target, and proceeds searching
     until the ring size equals twice the grid_size parameter. If multiple cells exist at the
-    same minimum distance, one is chosen randomly. 
+    same minimum distance, one is chosen randomly. Seed parameter ensures reproducability. 
     
     :param data: Placement data dictionary.
     :type data: dict
@@ -133,11 +133,15 @@ def search_ring(data: dict, target_coordinates: tuple[int, int], grid_size: int)
     :param grid_size: Size of the (square) grid. Valid coordinates satisfy
                     0 <= x < grid_size and 0 <= y < grid_size.
     :type grid_size: int
+    :param seed: Seed for random number generator.
+    :type: int
     :return: Coordinates (x, y) of a nearest available cell.
     :rtype: tuple[int, int]
     :raises ValueError: If no available cell exists within the grid.
     """
     
+    rng = random.Random(seed)                                                       # creates an object that generates random sequence of numbers according to a seed. 
+
     X, Y = target_coordinates                                                       # unpacks the target_coordinates tuple to X and Y variables
 
     locked_coordinates = {
@@ -159,7 +163,7 @@ def search_ring(data: dict, target_coordinates: tuple[int, int], grid_size: int)
                 if in_bounds(coord, grid_size) and coord not in locked_coordinates:
                     candidate_moves.add(coord)                                      # if it is both in the boundary and not locked, then we add it to the candidate moves. 
 
-        if candidate_moves:  
-            return random.choice(tuple(candidate_moves))                            # set objects dont work with random.choice, so instead we convert to a tuple first. It makes no difference if we convert to list or tuple, so i just chose tuple.
+        if candidate_moves:   
+            return rng.choice(tuple(candidate_moves))                               # choose a random value in candidate_moves (converted to tuple first, as .choice doesnt work with sets) according to the seed. 
 
     raise ValueError("There are no available cells. Either all cells are locked or grid_size is invalid.")
