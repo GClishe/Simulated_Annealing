@@ -1,5 +1,6 @@
-from Gavin_Implementation.Place_Benchmarks.Place_25 import data
+from Gavin_Implementation.Place_Benchmarks.Place_5 import data
 import random
+from copy import deepcopy
 import numpy as np
 import math
 
@@ -8,15 +9,19 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 
 print(data)
-##################################### Example placement data ############################
-# data = {
+
+state = deepcopy(data) #without the deepcopy, each time data is modified in this file, the information in the memory location holding `data` is modified. Then if you rerun the "import data" line, it imports the still-modified value held in the cache, NOT the variable actually in the Place_5 file. Therefore, a copy must be made to ensure that the original data variable that we import is not modified.
+print(state)
+
+##################################### Example placement state ############################
+# state = {
 #     'grid_size': 3,
 # 
 #     'cells': {
-#         'CELL_0': {'type': 'MOVABLE', 'fixed': False, 'position': (1, 2)},
-#         'CELL_1': {'type': 'MOVABLE', 'fixed': False, 'position': (1, 0)},
-#         'CELL_2': {'type': 'MOVABLE', 'fixed': False, 'position': (0, 0)},
-#         'CELL_3': {'type': 'MOVABLE', 'fixed': False, 'position': (0, 1)},
+#         'CELL_0': {'type': 'unlocked', 'fixed': False, 'position': (1, 2)},
+#         'CELL_1': {'type': 'unlocked', 'fixed': False, 'position': (1, 0)},
+#         'CELL_2': {'type': 'unlocked', 'fixed': False, 'position': (0, 0)},
+#         'CELL_3': {'type': 'unlocked', 'fixed': False, 'position': (0, 1)},
 #         'IO_0': {'type': 'IO', 'fixed': True, 'position': (2, 1)},
 #     },
 # 
@@ -42,14 +47,13 @@ def cool(T: int) -> int:
     # defines the cooling schedule for the temperature T
     return 0.95*T
 
-
-def cost(data: dict) -> int:
+def cost(state: dict) -> int:
     """
     Return cost associated with a particular state. Cost is the total manhattan distance 
     separating connected cells (those on the same net). Distance between connected cells
     is |x_i - x_j| + |y_i-y_j|. cost(state) returns sum of all distances.  
     
-    :param state: Placement data describing grid size, cell locations, and net connectivity.
+    :param state: Placement state describing grid size, cell locations, and net connectivity.
     :type state: dict
     :return: Total Manhattan wirelength summed over all nets.
     :rtype: int
@@ -57,11 +61,11 @@ def cost(data: dict) -> int:
     # a potential optimization once the rest of the algorithm is written might be to instead only recompute the length of nets connected to a moved cell. 
 
     total_length = 0                                     # initializes length (cost) to 0
-    for net in data['nets']:
+    for net in state['nets']:
         cell_i, cell_j = net['cells']                    # grabs the two connected cells on each net
 
-        x_i, y_i = data['cells'][cell_i]['position']     # grabs the coordinates associated with cell_i in the data['cells'] dictionary
-        x_j, y_j = data['cells'][cell_j]['position']     # same but for cell_j
+        x_i, y_i = state['cells'][cell_i]['position']     # grabs the coordinates associated with cell_i in the state['cells'] dictionary
+        x_j, y_j = state['cells'][cell_j]['position']     # same but for cell_j
 
         wire_length = abs(x_i - x_j) + abs(y_i - y_j)    # computes manhattan length between cell_i and cell_j
         total_length += wire_length                      # adds length of this net to the total length
@@ -69,7 +73,7 @@ def cost(data: dict) -> int:
     return total_length
 
 # search_ring is essentially a helper function designed for use in the perturb() function. 
-def search_ring(data: dict, target_coordinates: tuple[int, int], grid_size: int, seed: int = None) -> tuple[int, int]:
+def search_ring(state: dict, target_coordinates: tuple[int, int], grid_size: int, seed: int = None) -> tuple[int, int]:
     """
     Searches outward from a target coordinate in Manhattan distance "rings" and returns
     a randomly selected available (not locked, in-bounds) from the nearest ring. 
@@ -78,8 +82,8 @@ def search_ring(data: dict, target_coordinates: tuple[int, int], grid_size: int,
     until the ring size equals twice the grid_size parameter. If multiple cells exist at the
     same minimum distance, one is chosen randomly. Seed parameter ensures reproducability. 
     
-    :param data: Placement data dictionary.
-    :type data: dict
+    :param state: Placement state dictionary.
+    :type state: dict
     :param target_coordinates: (x, y) coordinates of the target cell.
     :type target_coordinates: tuple[int, int]
     :param grid_size: Size of the (square) grid. Valid coordinates satisfy
@@ -97,7 +101,7 @@ def search_ring(data: dict, target_coordinates: tuple[int, int], grid_size: int,
     X, Y = target_coordinates                                                       # unpacks the target_coordinates tuple to X and Y variables
 
     locked_coordinates = {
-        cell["position"] for cell in data["cells"].values() if cell["fixed"]        # creates a set containing all locked coordinates. Set is chosen because it is easy to search and order is not needed
+        cell["position"] for cell in state["cells"].values() if cell["fixed"]        # creates a set containing all locked coordinates. Set is chosen because it is easy to search and order is not needed
     }
 
     def in_bounds(coord: tuple[int, int], grid_size: int) -> bool:
@@ -120,35 +124,35 @@ def search_ring(data: dict, target_coordinates: tuple[int, int], grid_size: int,
 
     raise ValueError("There are no available cells. Either all cells are locked or grid_size is invalid.")
 
-def perturb(data: dict, seeds: list[int, int, int] = [None, None, None]) -> dict:
+def perturb(state: dict, seeds: list[int, int, int] = [None, None, None]) -> dict:
     """
     Proposes a signle perturbation (move) to the current placement solution. The move is generated in three randomized steps:
-    First, you choose a net that contains at least one moveable cell, with probability proportional to the net's current
-    wire length. Next, choose one movable cell on that net to move. Third, move that cell to a nearby coordinate close to the 
+    First, you choose a net that contains at least one unlocked cell, with probability proportional to the net's current
+    wire length. Next, choose one unlocked cell on that net to move. Third, move that cell to a nearby coordinate close to the 
     other cell on that net, using the search_ring() function. If the desination coordinate is occupied, swap the two cells. 
 
     To ensure reproducibility despite randomness, we seed each random number generator with a different seed. seeds[0] seeds
-    the net selection, seed[1] seeds the movable-cell selection, and seeds[2] is forwarded to search_ring() for destination 
+    the net selection, seed[1] seeds the unlocked-cell selection, and seeds[2] is forwarded to search_ring() for destination 
     selection.
     
-    :type data: dict
+    :type state: dict
     :param seeds: Three seeds controlling the random choices made by this function.
     :type seeds: list[int, int, int]
     :return: The modified placement dictionary (cells may be moved / swapped).
     :rtype: dict
-    :raises ValueError: If no nets contain a MOVABLE cell (cannot generate a move).
+    :raises ValueError: If no nets contain an unlocked cell (cannot generate a move).
     """
     
     # the code below reuses the same code in the cost function. Once I have an implementation for each part of the SA algorithm, I will rewrite to remove repeated code.
     nets = []
     weights = []
-    max_length = 2 * (data['grid_size'] + 1)               # nets will be weighted based on their length compared to the max length. There is no need for the weights to be normalized.
+    max_length = 2 * (state['grid_size'] + 1)               # nets will be weighted based on their length compared to the max length. There is no need for the weights to be normalized.
 
-    for net in data['nets']:
-        cell_i, cell_j = net['cells']                      # grabs the two connected cells on each net
+    for net in state['nets']:
+        cell_i, cell_j = net['cells']                       # grabs the two connected cells on each net
 
-        x_i, y_i = data['cells'][cell_i]['position']       # grabs the coordinates associated with cell_i in the data['cells'] dictionary
-        x_j, y_j = data['cells'][cell_j]['position']       # same but for cell_j
+        x_i, y_i = state['cells'][cell_i]['position']       # grabs the coordinates associated with cell_i in the state['cells'] dictionary
+        x_j, y_j = state['cells'][cell_j]['position']       # same but for cell_j
 
         wire_length = abs(x_i - x_j) + abs(y_i - y_j)       # manhattan distance
 
@@ -156,28 +160,28 @@ def perturb(data: dict, seeds: list[int, int, int] = [None, None, None]) -> dict
         net['length'] = wire_length
         net['weight'] = wire_length / max_length
 
-        # if either of the cells are movable, add the net to the `nets` list (and its weight to the `weights` list)
-        if any(data['cells'][cell_name]['type'] == 'MOVABLE' for cell_name in net['cells']): 
+        # if either of the cells are unlocked, add the net to the `nets` list (and its weight to the `weights` list)
+        if any(state['cells'][cell_name]['fixed'] == 'True' for cell_name in net['cells']): 
             weights.append(net['weight'])
             nets.append(net)
 
     # check if nets is empty. If so, raise a ValueError
     if not nets:   
-        raise ValueError("No nets contain a MOVABLE cell, so no perturbation can be generated.")
+        raise ValueError("No nets contain an unlocked cell, so no perturbation can be generated.")
 
     # choose a net probabilistically based on its weight relative to the other nets.
-    # because `nets` and `weights` contains only nets with movable cells, chosen_net is also guaranteed
-    # to have at least one movable cell
+    # because `nets` and `weights` contains only nets with unlocked cells, chosen_net is also guaranteed
+    # to have at least one unlocked cell
     rng_net = random.Random(seeds[0])
     chosen_net = rng_net.choices(nets, weights=weights, k=1)[0]
 
-    # now we need to randomly choose either one of the movable cells on that net. If only one cell is movable, we must choose that one.
-    movable_cell_mask = [data['cells'][cell_name]['type'] == 'MOVABLE' for cell_name in chosen_net['cells']]  # creates a [True/False, True/False] mask describing cells that are movable or not
-    movable_cells = np.array(chosen_net['cells'])[movable_cell_mask]                                          # uses the mask to create an array that contains the movable cell(s) on that net. len(movable_cells) is either 1 or 2.
+    # now we need to randomly choose either one of the non-fixed cells on that net. If only one cell is fixed, we must choose the other one.
+    unlocked_cell_mask = [state['cells'][cell_name]['fixed'] == 'False' for cell_name in chosen_net['cells']]   # creates a [True/False, True/False] mask describing cells that are unlocked or not
+    unlocked_cells = np.array(chosen_net['cells'])[unlocked_cell_mask]                                          # uses the mask to create an array that contains the unlocked cell(s) on that net. len(unlocked_cells) is either 1 or 2.
 
     rng_cell = random.Random(seeds[1])
-    cell_to_move = rng_cell.choices(list(movable_cells), k=1)[0]                                              # randomly chooses one of the cells in movable_cells. choices(...) returns a list, so [0] extracts the string.
-    cell_to_move_original_coords = data['cells'][cell_to_move]['position']                                    # original coordinates of the cell we are moving. This will be useful for swapping if the new position is occupied by a movable cell. 
+    cell_to_move = rng_cell.choices(list(unlocked_cells), k=1)[0]                                               # randomly chooses one of the cells in unlocked_cells. choices(...) returns a list, so [0] extracts the string.
+    cell_to_move_original_coords = state['cells'][cell_to_move]['position']                                    # original coordinates of the cell we are moving. This will be useful for swapping if the new position is occupied by a unlocked cell. 
 
     # Now I want to move that cell to be close to its net-neighbor (target_cell).
     for cell in chosen_net['cells']:
@@ -186,21 +190,21 @@ def perturb(data: dict, seeds: list[int, int, int] = [None, None, None]) -> dict
 
     # now find the coordinates of the new position of cell_to_move
     new_coords = search_ring(
-        data=data,
-        target_coordinates=data['cells'][target_cell]['position'],
-        grid_size=data['grid_size'],
+        state=state,
+        target_coordinates=state['cells'][target_cell]['position'],
+        grid_size=state['grid_size'],
         seed=seeds[2]
     ) 
 
     # ow we need to actually move this cell to the new coords. First step will be to check if the new coords are occupied. If so, swap them.
-    for cell in data['cells'].values():
+    for cell in state['cells'].values():
         if new_coords == cell['position']:
             cell['position'] = cell_to_move_original_coords     # moves the cell occupying the new coordinates to the old position of the cell we are moving
 
-    data['cells'][cell_to_move]['position'] = new_coords        # updates the cell we are moving to be in the new position.
-    data['cells'][cell_to_move]['fixed'] = True                 # Fixes the position of the moved cell (but not the cell that used to be there, if one existed)
+    state['cells'][cell_to_move]['position'] = new_coords        # updates the cell we are moving to be in the new position.
+    state['cells'][cell_to_move]['fixed'] = True                 # Fixes the position of the moved cell (but not the cell that used to be there, if one existed)
 
-    return data
+    return state
 
 def accept_move(d_cost: int, T: int, k: int, seed: int) -> bool:
     """
@@ -231,14 +235,13 @@ def accept_move(d_cost: int, T: int, k: int, seed: int) -> bool:
     else: 
         return False
 
-
 #below is a purely chatgpt generated code specifically designed to test my perturb() function. I will be removing this function in the final version. 
-def plot_placement(data, *, show_nets=True, label_cells=True, title=None):
+def plot_placement(state, *, show_nets=True, label_cells=True, title=None):
     """
     Plot an NxN placement grid with shaded occupied cells and optional net lines.
     Coordinates are assumed to be integer cell indices with (0,0) at bottom-left.
     """
-    N = data["grid_size"]
+    N = state["grid_size"]
 
     fig, ax = plt.subplots(figsize=(6, 6))
 
@@ -248,18 +251,18 @@ def plot_placement(data, *, show_nets=True, label_cells=True, title=None):
         ax.plot([0, N], [k, k], linewidth=1)
 
     # --- occupied cells ---
-    for name, info in data["cells"].items():
+    for name, info in state["cells"].items():
         x, y = info["position"]
         ax.add_patch(Rectangle((x, y), 1, 1, alpha=0.35))  # no explicit color
         if label_cells:
             ax.text(x + 0.5, y + 0.5, name, ha="center", va="center", fontsize=8)
 
     # --- nets (center-to-center) ---
-    if show_nets and "nets" in data:
-        for net in data["nets"]:
+    if show_nets and "nets" in state:
+        for net in state["nets"]:
             a, b = net["cells"]
-            xa, ya = data["cells"][a]["position"]
-            xb, yb = data["cells"][b]["position"]
+            xa, ya = state["cells"][a]["position"]
+            xb, yb = state["cells"][b]["position"]
             ax.plot([xa + 0.5, xb + 0.5], [ya + 0.5, yb + 0.5],
                     linestyle="--", linewidth=1, alpha=0.7)
 
@@ -276,12 +279,40 @@ def plot_placement(data, *, show_nets=True, label_cells=True, title=None):
 
 
 
+MASTER_SEED = 12345
+master = random.Random(MASTER_SEED) 
+
+# random.Random(MASTER_SEED) constructs an RNG object whose output depends (deterministically) on MASTER_SEED.
+# master.getrandbits(32) will be used to generate four random (but deterministic) seeds from master on each iteration. 
+# successive getrandbits(32) calls results in different numbers being called each time. For example, 
+# s1 = master.getrandbits(32) --> 1789368711
+# s2 = master.getrandbits(32) --> 3146859322
+# s3 = master.getrandbits(32) --> 43676229
+# s4 = master.getrandbits(32) --> 3522623596
+# These four seeds will be generated (and will be different) on each iteration. The perturb() function will use three of them and the 
+# accept_move() function will use the other one. But since everything is derived from this random.Random object, the end result of the whole
+# algorithm will be the the same as long as MASTER_SEED remains unchanged. 
+
 T_min = 0.1
 NUM_MOVES_PER_T_STEP = 250
 
-currSolution = data
+currSolution = state
 T = 40_000
+
+print(cost(currSolution))
 while T > T_min:
-    for _ in NUM_MOVES_PER_T_STEP:
-        nextSol = perturb(currSolution)
-        
+    for _ in range(NUM_MOVES_PER_T_STEP):
+        s1 = master.getrandbits(32)
+        s2 = master.getrandbits(32)
+        s3 = master.getrandbits(32)
+        s4 = master.getrandbits(32)
+
+        plot_placement(currSolution, show_nets=False)
+
+        nextSol = perturb(currSolution, seeds = [s1,s2,s3])
+        d_cost = cost(nextSol) - cost(currSolution)
+        if accept_move(d_cost, T, k=1, seed=s4):
+            print(f"Move has been accepted. State is now: \n {currSolution}")
+            currSolution = nextSol
+
+    cool(T)
