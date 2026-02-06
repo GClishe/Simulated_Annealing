@@ -14,7 +14,7 @@ state = deepcopy(data) #without the deepcopy, each time data is modified in this
 print(state)
 
 ##################################### Example placement state ############################
-# state = {
+# data = {
 #     'grid_size': 3,
 # 
 #     'cells': {
@@ -161,7 +161,7 @@ def perturb(state: dict, seeds: list[int, int, int] = [None, None, None]) -> dic
         net['weight'] = wire_length / max_length
 
         # if either of the cells are unlocked, add the net to the `nets` list (and its weight to the `weights` list)
-        if any(state['cells'][cell_name]['fixed'] == 'True' for cell_name in net['cells']): 
+        if any(state['cells'][cell_name]['fixed'] is 'False' for cell_name in net['cells']): 
             weights.append(net['weight'])
             nets.append(net)
 
@@ -176,7 +176,7 @@ def perturb(state: dict, seeds: list[int, int, int] = [None, None, None]) -> dic
     chosen_net = rng_net.choices(nets, weights=weights, k=1)[0]
 
     # now we need to randomly choose either one of the non-fixed cells on that net. If only one cell is fixed, we must choose the other one.
-    unlocked_cell_mask = [state['cells'][cell_name]['fixed'] == 'False' for cell_name in chosen_net['cells']]   # creates a [True/False, True/False] mask describing cells that are unlocked or not
+    unlocked_cell_mask = [state['cells'][cell_name]['fixed'] is False for cell_name in chosen_net['cells']]     # creates a [True/False, True/False] mask describing cells that are unlocked or not
     unlocked_cells = np.array(chosen_net['cells'])[unlocked_cell_mask]                                          # uses the mask to create an array that contains the unlocked cell(s) on that net. len(unlocked_cells) is either 1 or 2.
 
     rng_cell = random.Random(seeds[1])
@@ -198,8 +198,10 @@ def perturb(state: dict, seeds: list[int, int, int] = [None, None, None]) -> dic
 
     # ow we need to actually move this cell to the new coords. First step will be to check if the new coords are occupied. If so, swap them.
     for cell in state['cells'].values():
-        if new_coords == cell['position']:
-            cell['position'] = cell_to_move_original_coords     # moves the cell occupying the new coordinates to the old position of the cell we are moving
+        if new_coords == cell['position']: 
+            if cell['fixed'] is True:                            #checks if the cell that we are trying to relocate is fixed. This should never happen, but if it does, this should handle it.
+                raise ValueError("Desination occupied by fixed cell.")
+            cell['position'] = cell_to_move_original_coords      # moves the cell occupying the new coordinates to the old position of the cell we are moving
 
     state['cells'][cell_to_move]['position'] = new_coords        # updates the cell we are moving to be in the new position.
     state['cells'][cell_to_move]['fixed'] = True                 # Fixes the position of the moved cell (but not the cell that used to be there, if one existed)
@@ -277,11 +279,11 @@ def plot_placement(state, *, show_nets=True, label_cells=True, title=None):
     ax.set_title(title or "Placement (occupied cells + nets)")
     plt.show()
 
-def unfix_all(state: dict) -> dict:
+def unfix_all(state: dict) -> None:
     # All movable cells are set to the fixed = False state. 
     for cell in state['cells'].values():
         if cell['type'] == 'MOVABLE':
-            cell['fixed'] == False
+            cell['fixed'] = False
 
 
 MASTER_SEED = 12345
@@ -301,27 +303,43 @@ master = random.Random(MASTER_SEED)
 T_min = 0.1
 NUM_MOVES_PER_T_STEP = 250
 
-currSolution = state
-bestSolution = currSolution
+currSolution = deepcopy(state)
+bestSolution = deepcopy(currSolution)
 bestCost = cost(currSolution)
+
 T = 40_000
 
-print(cost(currSolution))
+unfix_all(currSolution)
 while T > T_min:
-    for _ in range(NUM_MOVES_PER_T_STEP):
+    for i in range(NUM_MOVES_PER_T_STEP):
+        # settign deterministic seeds that differ on each iteration. See comments above. 
         s1 = master.getrandbits(32)
         s2 = master.getrandbits(32)
         s3 = master.getrandbits(32)
         s4 = master.getrandbits(32)
 
-        if (current_cost := cost(currSolution) < bestCost):
-            bestCost = current_cost
-            bestSolution = currSolution
+        curr_cost = cost(currSolution)
+        if curr_cost < bestCost:
+            bestCost = curr_cost
+            bestSolution = deepcopy(currSolution)
 
-        nextSol = perturb(currSolution, seeds = [s1,s2,s3])
-        d_cost = cost(nextSol) - cost(currSolution)
+        try:
+            nextSol = perturb(deepcopy(currSolution), seeds=[s1, s2, s3])
+        except ValueError:
+            print(f"Iteration {i} at T={T} ran out of unfixed cells. "
+                  f"Best cost so far: {bestCost}. Unfixing and moving to next T.")
+            break
+
+        next_cost = cost(nextSol)
+        d_cost = next_cost - curr_cost
+
         if accept_move(d_cost, T, k=1, seed=s4):
-            print(f"Move has been accepted. State is now: \n {currSolution}")
             currSolution = nextSol
 
-    cool(T)
+        if i == NUM_MOVES_PER_T_STEP - 1:
+            print(f"{NUM_MOVES_PER_T_STEP} iterations at T={T} reached. "
+                  f"Best cost so far: {bestCost}. Unfixing and moving to next T.")
+
+    unfix_all(currSolution)
+    T = cool(T)
+
