@@ -18,10 +18,10 @@ print(state)
 #     'grid_size': 3,
 # 
 #     'cells': {
-#         'CELL_0': {'type': 'unlocked', 'fixed': False, 'position': (1, 2)},
-#         'CELL_1': {'type': 'unlocked', 'fixed': False, 'position': (1, 0)},
-#         'CELL_2': {'type': 'unlocked', 'fixed': False, 'position': (0, 0)},
-#         'CELL_3': {'type': 'unlocked', 'fixed': False, 'position': (0, 1)},
+#         'CELL_0': {'type': 'MOVABLE', 'fixed': False, 'position': (1, 2)},
+#         'CELL_1': {'type': 'MOVABLE', 'fixed': False, 'position': (1, 0)},
+#         'CELL_2': {'type': 'MOVABLE', 'fixed': False, 'position': (0, 0)},
+#         'CELL_3': {'type': 'MOVABLE', 'fixed': False, 'position': (0, 1)},
 #         'IO_0': {'type': 'IO', 'fixed': True, 'position': (2, 1)},
 #     },
 # 
@@ -277,6 +277,11 @@ def plot_placement(state, *, show_nets=True, label_cells=True, title=None):
     ax.set_title(title or "Placement (occupied cells + nets)")
     plt.show()
 
+def unfix_all(state: dict) -> dict:
+    # All movable cells are set to the fixed = False state. 
+    for cell in state['cells'].values():
+        if cell['type'] == 'MOVABLE':
+            cell['fixed'] == False
 
 
 MASTER_SEED = 12345
@@ -297,6 +302,8 @@ T_min = 0.1
 NUM_MOVES_PER_T_STEP = 250
 
 currSolution = state
+bestSolution = currSolution
+bestCost = cost(currSolution)
 T = 40_000
 
 print(cost(currSolution))
@@ -307,7 +314,9 @@ while T > T_min:
         s3 = master.getrandbits(32)
         s4 = master.getrandbits(32)
 
-        plot_placement(currSolution, show_nets=False)
+        if (current_cost := cost(currSolution) < bestCost):
+            bestCost = current_cost
+            bestSolution = currSolution
 
         nextSol = perturb(currSolution, seeds = [s1,s2,s3])
         d_cost = cost(nextSol) - cost(currSolution)
