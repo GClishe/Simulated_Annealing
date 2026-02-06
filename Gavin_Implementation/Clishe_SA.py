@@ -161,7 +161,7 @@ def perturb(state: dict, seeds: list[int, int, int] = [None, None, None]) -> dic
         net['weight'] = wire_length / max_length
 
         # if either of the cells are unlocked, add the net to the `nets` list (and its weight to the `weights` list)
-        if any(state['cells'][cell_name]['fixed'] is 'False' for cell_name in net['cells']): 
+        if any(state['cells'][cell_name]['fixed'] is False for cell_name in net['cells']): 
             weights.append(net['weight'])
             nets.append(net)
 
