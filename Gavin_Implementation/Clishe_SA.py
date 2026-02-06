@@ -1,7 +1,7 @@
 from Gavin_Implementation.Place_Benchmarks.Place_5 import data
 import random
 import numpy as np
-
+print(data)
 ##################################### Example placement data ############################
 # data = {
 #     'grid_size': 3,
@@ -62,60 +62,6 @@ def cost(data: dict) -> int:
     
     return total_length
 
-def perturb(data: dict) -> dict:
-    # function that takes the current solution and makes a single move (however that is defined), returning the resulting solution. 
-    # my current approach (might be quite intensive though) is to find the net with the highest cost (assuming at least one of the cells
-    # is movable), then move one of the cells to the nearest available cell (movable or not) to the other one. I do not think this move function
-    # should be deterministic. Because if it is, then you run the risk of every single iteration in num_moves_per_step attempting the exact same
-    # move. At lower temperatures, this move might be rejected every single time, which is a waste. So maybe instead of choosing THE highest cost net,
-    # it instead probablistically chooses nets, with higher weights applied to nets of larger cost. Perhaps a first approach might assign weights as 
-    # net_cost/total_cost (or something else)
-
-    
-    # the code below reuses the same code in the cost function. Once I have an implementation for each part of the SA algorithm, I will rewrite to remove repeated code.
-    nets = []
-    weights=[]
-    max_length = 2*(data['grid_size'] + 1)               # nets will be weighted based on their length compared to the max length. There is no need for the weights to be normalized, so we do not need to weight them based on their length compared to total cost. 
-    for net in data['nets']:                   
-        cell_i, cell_j = net['cells']                    # grabs the two connected cells on each net
-
-        x_i, y_i = data['cells'][cell_i]['position']     # grabs the coordinates associated with cell_i in the data['cells'] dictionary
-        x_j, y_j = data['cells'][cell_j]['position']     # same but for cell_j
-
-        wire_length = abs(x_i - x_j) + abs(y_i - y_j)
-
-        # adds length and weight as parameters attached to each net
-        net['length'] = wire_length
-        net['weight'] = wire_length/max_length 
-
-        if any(data['cells'][cell_name]['type'] == 'MOVABLE' for cell_name in net['cells']): # checks if either of the cells on this net are movable
-            # if either of the cells are movable, add the net to the `nets` list (and its weight to the `weights` list)
-            weights.append(net['weight'])         
-            nets.append(net)
-    
-    # choose a net probabilistically based on its weight relative to the other nets. 
-    # because `nets` and `weights` contains only nets with movable cells, chosen_net is also guaranteed
-    # to have at least one movable cell
-    chosen_net = random.choices(nets, weights=weights) 
-
-    # Now we need to randomly choose either one of the movable cells on that net. If only one cell is movable, we must choose that one. We do this with a mask of movable cells        
-    movable_cell_mask = [data['cells'][cell_name]['type'] == 'MOVABLE' for cell_name in chosen_net['cells']] # creates a [True/False, True/False] mask describing cells that are movable or not
-    movable_cells = np.array(chosen_net['cells'])[movable_cell_mask] # uses the mask to create an array that contains the movable cell(s) on that net. len(movable_cells) is either 1 or 2.
-    random.choices(movable_cells)[0]                                         # randomly chooses one of the cells in movable_cells. choices(movable_cells) has type list, so we choose index 0 to extract the string.
-    
-
-chosen_net = data['nets'][1]
-
-# Now we need to randomly choose either one of the movable cells on that net. If only one cell is movable, we must choose that one. We do this with a mask of movable cells        
-movable_cell_mask = [data['cells'][cell_name]['type'] == 'MOVABLE' for cell_name in chosen_net['cells']] # creates a [True/False, True/False] mask describing cells that are movable or not
-movable_cells = np.array(chosen_net['cells'])[movable_cell_mask] # uses the mask to create an array that contains the movable cell(s) on that net. len(movable_cells) is either 1 or 2.
-cell_to_move = random.choices(movable_cells)[0]                         # randomly selects one of the cells in movable_cells. choices(movable_cells) has type list, so we choose index 0 to extract the string.   
-
-#Now I want to move that cell to be close to its net-neighbor (target_cell). 
-for cell in chosen_net['cells']:
-    if cell != cell_to_move:
-        target_cell = cell          # the cell on chosen_net that will not be moved is the target cell.
-
 
 def search_ring(data: dict, target_coordinates: tuple[int, int], grid_size: int, seed: int = None) -> tuple[int, int]:
     """
@@ -167,3 +113,85 @@ def search_ring(data: dict, target_coordinates: tuple[int, int], grid_size: int,
             return rng.choice(tuple(candidate_moves))                               # choose a random value in candidate_moves (converted to tuple first, as .choice doesnt work with sets) according to the seed. 
 
     raise ValueError("There are no available cells. Either all cells are locked or grid_size is invalid.")
+
+
+def perturb(data: dict, seeds: list[int, int, int] = [None, None, None]) -> dict:
+    """
+    Proposes a signle perturbation (move) to the current placement solution. The move is generated in three randomized steps:
+    First, you choose a net that contains at least one moveable cell, with probability proportional to the net's current
+    wire length. Next, choose one movable cell on that net to move. Third, move that cell to a nearby coordinate close to the 
+    other cell on that net, using the search_ring() function. If the desination coordinate is occupied, swap the two cells. 
+
+    To ensure reproducibility despite randomness, we seed each random number generator with a different seed. seeds[0] seeds
+    the net selection, seed[1] seeds the movable-cell selection, and seeds[2] is forwarded to search_ring() for destination 
+    selection.
+    
+    :type data: dict
+    :param seeds: Three seeds controlling the random choices made by this function.
+    :type seeds: list[int, int, int]
+    :return: The modified placement dictionary (cells may be moved / swapped).
+    :rtype: dict
+    :raises ValueError: If no nets contain a MOVABLE cell (cannot generate a move).
+    """
+    
+    # the code below reuses the same code in the cost function. Once I have an implementation for each part of the SA algorithm, I will rewrite to remove repeated code.
+    nets = []
+    weights = []
+    max_length = 2 * (data['grid_size'] + 1)               # nets will be weighted based on their length compared to the max length. There is no need for the weights to be normalized.
+
+    for net in data['nets']:
+        cell_i, cell_j = net['cells']                      # grabs the two connected cells on each net
+
+        x_i, y_i = data['cells'][cell_i]['position']       # grabs the coordinates associated with cell_i in the data['cells'] dictionary
+        x_j, y_j = data['cells'][cell_j]['position']       # same but for cell_j
+
+        wire_length = abs(x_i - x_j) + abs(y_i - y_j)       # manhattan distance
+
+        # adds length and weight as parameters attached to each net
+        net['length'] = wire_length
+        net['weight'] = wire_length / max_length
+
+        # if either of the cells are movable, add the net to the `nets` list (and its weight to the `weights` list)
+        if any(data['cells'][cell_name]['type'] == 'MOVABLE' for cell_name in net['cells']): 
+            weights.append(net['weight'])
+            nets.append(net)
+
+    # check if nets is empty. If so, raise a ValueError
+    if not nets:   
+        raise ValueError("No nets contain a MOVABLE cell, so no perturbation can be generated.")
+
+    # choose a net probabilistically based on its weight relative to the other nets.
+    # because `nets` and `weights` contains only nets with movable cells, chosen_net is also guaranteed
+    # to have at least one movable cell
+    rng_net = random.Random(seeds[0])
+    chosen_net = rng_net.choices(nets, weights=weights, k=1)[0]
+
+    # now we need to randomly choose either one of the movable cells on that net. If only one cell is movable, we must choose that one.
+    movable_cell_mask = [data['cells'][cell_name]['type'] == 'MOVABLE' for cell_name in chosen_net['cells']]  # creates a [True/False, True/False] mask describing cells that are movable or not
+    movable_cells = np.array(chosen_net['cells'])[movable_cell_mask]                                          # uses the mask to create an array that contains the movable cell(s) on that net. len(movable_cells) is either 1 or 2.
+
+    rng_cell = random.Random(seeds[1])
+    cell_to_move = rng_cell.choices(list(movable_cells), k=1)[0]                                              # randomly chooses one of the cells in movable_cells. choices(...) returns a list, so [0] extracts the string.
+    cell_to_move_original_coords = data['cells'][cell_to_move]['position']
+
+    # Now I want to move that cell to be close to its net-neighbor (target_cell).
+    for cell in chosen_net['cells']:
+        if cell != cell_to_move:
+            target_cell = cell                    # the cell on chosen_net that will not be moved is the target cell.
+
+    new_coords = search_ring(
+        data=data,
+        target_coordinates=data['cells'][target_cell]['position'],
+        grid_size=data['grid_size'],
+        seed=seeds[2]
+    )  # finds the coordinates of the new position of cell_to_move
+
+    # Now we need to actually move this cell to the new coords. First step will be to check if the new coords are occupied. If so, swap them.
+    for cell in data['cells'].values():
+        if new_coords == cell['position']:
+            cell['position'] = cell_to_move_original_coords     # moves the cell occupying the new coordinates to the old position of the cell we are moving
+
+    data['cells'][cell_to_move]['position'] = new_coords        # updates the cell we are moving to be in the new position.
+
+    return data
+
