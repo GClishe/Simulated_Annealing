@@ -268,6 +268,69 @@ def compute_move_cost_update(state: dict, proposal: dict, current_cost: float) -
     new_cost = current_cost + delta                 # if delta is negative, the new cost is lower. Otherwise it is larger. 
     return new_cost, delta, net_updates             # returns a tuple containing the new TOTAL cost after the proposed net, the change in the total cost, and all of the nets being updated. 
 
+def apply_proposed_move(state: dict, proposal: dict, net_updates: list[dict] | None = None) -> dict:
+    """
+    Applies the previously proposed placement move to the current placement state by updating
+    cell coordinates and updating affected net data (such as lengths and weights). 
+
+    This function updates the position of the moved cell, swaps it with another cell if the 
+    destination is already occupied by a movable cell, and then updates the lengths and weights
+    of each net that is affected by the coordinate swaps. If a precomputed list of net updates
+    (from the compute_move_cost_update() function) is given, then this function does not recompute
+    anything. If no list of net updates is provided, this function will compute the updates. 
+    
+    :param state: Current placement state.
+    :type state: dict
+    :param proposal: Dictionary describing the proposed move. Must contain the keys
+                     "cell_to_move", "src", and "dst". May optionally contain "swap_with"
+                     indicating a cell to be swapped with the moved cell.
+    :type proposal: dict
+    :param net_updates: Optional list of dictionaries encoding precomputed net updates 
+                        produced by compute_move_cost_update(). Each dictionary must 
+                        specify the affected net index along with its new length and weight.
+    :type net_updates: list[dict] | None
+    :return: The updated placement state. The returned value is the same object as the input state.
+    :rtype: dict
+    """
+    moved = proposal["cell_to_move"]                        # name of the cell being moved
+    src = proposal["src"]                                   # original coordinates of the cell being moved
+    dst = proposal["dst"]                                   # destination coords of the cell being moved
+    swap_with = proposal.get("swap_with", None)             # name of the cell that is being swapped, if one exists. 
+
+    # updates coordinates of moved cells in `state`
+    if swap_with is None:                                   # if there is no cell being swapped:
+        state["cells"][moved]["position"] = dst             # updates the coordinates of the cell being moved to the destination coords. Notice that we no longer fix the position of this cell (unlike in previous iterations)
+    else:
+        state["cells"][moved]["position"] = dst             # if there is a cell being swapped, update the coordinates of the moving cell to the desination
+        state["cells"][swap_with]["position"] = src         # update the coordintes of the cell being swapped to the original coordinates of the cell that is being moved.
+
+    # updates net data
+    if net_updates is not None:                             # use the net_updates list[dict] that was output in compute_move_cost_update to replace affected nets with the already computed metadata
+        for upd in net_updates:                             # each upd dictionary contains the changes on a particular net
+            net = state["nets"][upd["net_index"]]           # grabs the net dicitonary in the state[`nets`] list at index upd['net_index']. assigns to `net` variable.
+            net["length"] = upd["new_length"]               # updates the length of the new net
+            net["weight"] = upd["new_weight"]               # updates the weight of the new net. 
+        return state                                        # returning state (rather than nothing at all) is not necessary. However, in the SA alogorithm `state = apply_proposed_state(...)` makes it slightly more obvious that state mutation is occuring
+
+    # if a net_updates list is not provided, we need to compute the new length and weight of each net. The code below is the same in the compute_move_cost_update() function. 
+    touched_cells = {moved}
+    if swap_with is not None:
+        touched_cells.add(swap_with)
+
+    max_length = 2 * (state["grid_size"] - 1)
+
+    for net in state["nets"]:
+        a, b = net["cells"]
+        if (a not in touched_cells) and (b not in touched_cells):
+            continue
+        ax, ay = state["cells"][a]["position"]
+        bx, by = state["cells"][b]["position"]
+        new_len = abs(ax - bx) + abs(ay - by)
+        net["length"] = new_len
+        net["weight"] = new_len / max_length
+
+    return state    # Again, it is not necessary that we actually return state. the state parameter is passed by reference, so any mutations we already did inside the function have already happened, regardless of what we return. 
+
 def accept_move(d_cost: int, T: int, k: int, seed: int) -> bool:
     """
     Decides whether or not to accept a proposed move. A move that does not increase cost (d_cost <= 0) is always
