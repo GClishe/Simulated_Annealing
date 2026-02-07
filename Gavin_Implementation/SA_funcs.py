@@ -184,6 +184,83 @@ def propose_move(state: dict, seeds: list[int, int, int] = [None, None, None]) -
         "target_cell": target_cell,             # name of the cell on net_name that is *not* being chosen to move. cell_to_move is trying to be close as possible to target_cell.
     }
 
+
+def compute_move_cost_update(state: dict, proposal: dict, current_cost: float) -> tuple[float, float, list[dict]]:
+    """
+    proposal is the dict object that is returned from propose_move(). Current cost is the total cost before 
+    the proposed move is accepted. 
+    Computes the new total cost if `proposal` were applied, WITHOUT modifying `state`.
+
+    Returns:
+      (new_cost, delta_cost, net_updates)
+
+    where net_updates is a list of dicts, one per affected net:
+      {
+        'net_index': int,
+        'net_name': str,
+        'old_length': int,
+        'new_length': int,
+        'old_weight': float,
+        'new_weight': float,
+      }
+
+    Assumptions:
+    - Nets are 2-pin (net['cells'] is a 2-tuple), as in your data.
+    - net['length'] and net['weight'] already exist (call annotate_net_lengths_and_weights(state) once).
+    """
+    
+    if "cell_to_move" not in proposal or "src" not in proposal or "dst" not in proposal:            # raise an error if the required fields are not present.
+        raise ValueError("proposal dict missing required keys (cell_to_move/src/dst).")
+
+    moved = proposal["cell_to_move"]                                    # grabs the name of the cell that we are proposing to move               
+    swap_with = proposal.get("swap_with", None)                         # grabs the name of the cell that is being swapped. If there is no swap, grab None. Technically proposal['swap_with'] already contains None if there is no swap, but this is added safety. 
+
+    virtual_pos = {moved: proposal["dst"]}                              # assigns virtual_pos = {cell_to_move: coordinates of destination}
+    if swap_with is not None:
+        virtual_pos[swap_with] = proposal["src"]                        # if a cell is being swapped, virtual_pos = {cell_to_move: coordinates of destination, name_of_swapped_cell: original coords of cell_to_move}
+
+    touched_cells = {moved}                                             # touched_cells is a set containing the cell that is being moved and the cell that is swapped (if exists). This is necessary to identify the nets that must be updated. 
+    if swap_with is not None:
+        touched_cells.add(swap_with)
+
+    max_length = 2 * (state["grid_size"] - 1)
+
+    delta = 0                                                           # delta will be used to track how much the total cost changes as nets are updated with new positions
+    net_updates: list[dict] = []                                        # creates new nets in the same format as in the state variable
+
+    for idx, net in enumerate(state["nets"]):                           # idx indexes each net in state['nets'] to keep track of ones that contain `moved` and `swap_with`
+        if "length" not in net or "weight" not in net:
+            raise ValueError("Net missing 'length'/'weight'. Run annotate_net_lengths_and_weights(state) first.")   # this error will be thrown if annotate_net_lengths_and_weights() has not been called
+
+        a, b = net["cells"]                                             # a,b are the names of the cells on the net
+        if (a not in touched_cells) and (b not in touched_cells):       # if moved or swap_with are not on this net, skip to the next idx, net iteration. 
+            continue  
+        
+        # everything below here executes when the net contains one of the cells being moved
+        old_len = net["length"]                                         # grab the old net length 
+        old_wt = net["weight"]                                          # grab the old net weight
+
+        ax, ay = virtual_pos.get(a, state["cells"][a]["position"])      # if a is the cell that we are proposing to move or is the cell being swapped, (ax,ay) contains the coordinates of its destination. If a is an unaffected cell on the net, (ax,ay) are the coordinates specified for that cell in `state`
+        bx, by = virtual_pos.get(b, state["cells"][b]["position"])      # same as above but for b. 
+        new_len = abs(ax - bx) + abs(ay - by)                           # computes the new length of the net
+        new_wt = new_len / max_length                                   # computes the new weight of the net
+ 
+        delta += (new_len - old_len)                                    # finds out how much the length of that net changes; adds to the total. No abs here, because a negative number should result in the total cost decreasing
+ 
+        net_updates.append(                                             # adds information of the updated net to net_updates. Once again, note that `state` has thusfar remained unchanged. 
+            {
+                "net_index": idx,                   # index of the updated net
+                "net_name": net.get("name", ""),    # name of the updated net
+                "old_length": old_len,              # old length of the updated net
+                "new_length": new_len,              # new length of the updated net
+                "old_weight": old_wt,               # old weight of the updated net
+                "new_weight": new_wt,               # new weight of the udpated net
+            }
+        )
+
+    new_cost = current_cost + delta                 # if delta is negative, the new cost is lower. Otherwise it is larger. 
+    return new_cost, delta, net_updates             # returns a tuple containing the new TOTAL cost after the proposed net, the change in the total cost, and all of the nets being updated. 
+
 def accept_move(d_cost: int, T: int, k: int, seed: int) -> bool:
     """
     Decides whether or not to accept a proposed move. A move that does not increase cost (d_cost <= 0) is always
