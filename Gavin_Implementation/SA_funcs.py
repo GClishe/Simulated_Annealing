@@ -46,7 +46,7 @@ def annotate_net_lengths_and_weights(state: dict) -> dict:
     """
     grid_size = state["grid_size"]
 
-    max_length = 2 * (grid_size + 1)        # used to weight the random number generator responsible for choosing nets in perturb().
+    max_length = 2 * (grid_size - 1)        # used to weight the random number generator responsible for choosing nets in perturb().
 
     for net in state["nets"]:
         cell_i, cell_j = net["cells"]
