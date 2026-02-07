@@ -113,89 +113,76 @@ def search_ring(state: dict, target_coordinates: tuple[int, int], grid_size: int
 
     raise ValueError("There are no available cells. Either all cells are locked or grid_size is invalid.")
 
-def perturb(state: dict, seeds: list[int, int, int] = [None, None, None]) -> dict:
+def propose_move(state: dict, seeds: list[int, int, int] = [None, None, None]) -> dict:
     """
-    Proposes a signle perturbation (move) to the current placement solution. The move is generated in three randomized steps:
-    First, you choose a net that contains at least one unlocked cell, with probability proportional to the net's current
-    wire length. Next, choose one unlocked cell on that net to move. Third, move that cell to a nearby coordinate close to the 
-    other cell on that net, using the search_ring() function. If the desination coordinate is occupied, swap the two cells. 
+    Proposes a single move for simulated annealing. Assumes that annotate_net_lengths_and_weights() has 
+    already been called, since each net must have 'length' and 'weight' fields. Does not modify `state`, 
+    so it is no longer necessary to create a deepcopy of `state` each time a new move is proposed (unlike in
+    previous iteration). 
 
-    To ensure reproducibility despite randomness, we seed each random number generator with a different seed. seeds[0] seeds
-    the net selection, seed[1] seeds the unlocked-cell selection, and seeds[2] is forwarded to search_ring() for destination 
-    selection.
-    
-    :type state: dict
-    :param seeds: Three seeds controlling the random choices made by this function.
-    :type seeds: list[int, int, int]
-    :return: The modified placement dictionary (cells may be moved / swapped).
-    :rtype: dict
-    :raises ValueError: If no nets contain an unlocked cell (cannot generate a move).
+    Returns a dict describing the proposal:
+      {
+        'net_name': str,
+        'cell_to_move': str,
+        'src': (x, y),
+        'dst': (x, y),
+        'swap_with': str | None,   # if dst occupied by an unfixed cell
+        'target_cell': str
+      }
     """
-    
-    # the code below reuses the same code in the cost function. Once I have an implementation for each part of the SA algorithm, I will rewrite to remove repeated code.
     nets = []
     weights = []
-    max_length = 2 * (state['grid_size'] + 1)               # nets will be weighted based on their length compared to the max length. There is no need for the weights to be normalized.
 
-    for net in state['nets']:
-        cell_i, cell_j = net['cells']                       # grabs the two connected cells on each net
+    for net in state["nets"]:
+        if "weight" not in net or "length" not in net:
+            raise ValueError(
+                "Net is missing 'length'/'weight'. Call annotate_net_lengths_and_weights(state) before propose_move()."
+            )
 
-        x_i, y_i = state['cells'][cell_i]['position']       # grabs the coordinates associated with cell_i in the state['cells'] dictionary
-        x_j, y_j = state['cells'][cell_j]['position']       # same but for cell_j
-
-        wire_length = abs(x_i - x_j) + abs(y_i - y_j)       # manhattan distance
-
-        # adds length and weight as parameters attached to each net
-        net['length'] = wire_length
-        net['weight'] = wire_length / max_length
-
-        # if either of the cells are unlocked, add the net to the `nets` list (and its weight to the `weights` list)
-        if any(state['cells'][cell_name]['fixed'] is False for cell_name in net['cells']): 
-            weights.append(net['weight'])
+        if any(state["cells"][cell_name]["fixed"] is False for cell_name in net["cells"]):
             nets.append(net)
+            weights.append(net["weight"])
 
-    # check if nets is empty. If so, raise a ValueError
-    if not nets:   
-        raise ValueError("No nets contain an unlocked cell, so no perturbation can be generated.")
+    if not nets:
+        raise ValueError("No nets contain an unlocked cell, so no move can be proposed.")
 
-    # choose a net probabilistically based on its weight relative to the other nets.
-    # because `nets` and `weights` contains only nets with unlocked cells, chosen_net is also guaranteed
-    # to have at least one unlocked cell
     rng_net = random.Random(seeds[0])
     chosen_net = rng_net.choices(nets, weights=weights, k=1)[0]
 
-    # now we need to randomly choose either one of the non-fixed cells on that net. If only one cell is fixed, we must choose the other one.
-    unlocked_cell_mask = [state['cells'][cell_name]['fixed'] is False for cell_name in chosen_net['cells']]     # creates a [True/False, True/False] mask describing cells that are unlocked or not
-    unlocked_cells = np.array(chosen_net['cells'])[unlocked_cell_mask]                                          # uses the mask to create an array that contains the unlocked cell(s) on that net. len(unlocked_cells) is either 1 or 2.
+    unlocked_cell_mask = [state["cells"][cell_name]["fixed"] is False for cell_name in chosen_net["cells"]]
+    unlocked_cells = np.array(chosen_net["cells"])[unlocked_cell_mask]  # len 1 or 2
 
     rng_cell = random.Random(seeds[1])
-    cell_to_move = rng_cell.choices(list(unlocked_cells), k=1)[0]                                               # randomly chooses one of the cells in unlocked_cells. choices(...) returns a list, so [0] extracts the string.
-    cell_to_move_original_coords = state['cells'][cell_to_move]['position']                                    # original coordinates of the cell we are moving. This will be useful for swapping if the new position is occupied by a unlocked cell. 
+    cell_to_move = rng_cell.choices(list(unlocked_cells), k=1)[0]
 
-    # Now I want to move that cell to be close to its net-neighbor (target_cell).
-    for cell in chosen_net['cells']:
-        if cell != cell_to_move:
-            target_cell = cell                    # the cell on chosen_net that will not be moved is the target cell.
+    src = state["cells"][cell_to_move]["position"]
 
-    # now find the coordinates of the new position of cell_to_move
-    new_coords = search_ring(
+    c0, c1 = chosen_net["cells"]
+    target_cell = c1 if cell_to_move == c0 else c0
+
+    dst = search_ring(
         state=state,
-        target_coordinates=state['cells'][target_cell]['position'],
-        grid_size=state['grid_size'],
-        seed=seeds[2]
-    ) 
+        target_coordinates=state["cells"][target_cell]["position"],
+        grid_size=state["grid_size"],
+        seed=seeds[2],
+    )
 
-    # ow we need to actually move this cell to the new coords. First step will be to check if the new coords are occupied. If so, swap them.
-    for cell in state['cells'].values():
-        if new_coords == cell['position']: 
-            if cell['fixed'] is True:                            #checks if the cell that we are trying to relocate is fixed. This should never happen, but if it does, this should handle it.
-                raise ValueError("Desination occupied by fixed cell.")
-            cell['position'] = cell_to_move_original_coords      # moves the cell occupying the new coordinates to the old position of the cell we are moving
+    swap_with = None
+    for cell_name, cell in state["cells"].items():
+        if cell["position"] == dst:
+            if cell["fixed"] is True:
+                raise ValueError("Destination occupied by fixed cell (unexpected).")
+            swap_with = cell_name
+            break
 
-    state['cells'][cell_to_move]['position'] = new_coords        # updates the cell we are moving to be in the new position.
-    state['cells'][cell_to_move]['fixed'] = True                 # Fixes the position of the moved cell (but not the cell that used to be there, if one existed)
-
-    return state
+    return {
+        "net_name": chosen_net.get("name", ""),
+        "cell_to_move": cell_to_move,
+        "src": src,
+        "dst": dst,
+        "swap_with": swap_with,
+        "target_cell": target_cell,
+    }
 
 def accept_move(d_cost: int, T: int, k: int, seed: int) -> bool:
     """
