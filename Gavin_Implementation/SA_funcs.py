@@ -37,6 +37,30 @@ def cost(state: dict) -> int:
     
     return total_length
 
+def annotate_net_lengths_and_weights(state: dict) -> dict:
+    """
+    Modifies the state dictionary, adding length and weight parameters to each net. 
+    Computing the total cost later on will be easier, as it will only need to add
+    up all of the wire_length values. Additionally, when a move is accepted, only 
+    affected nets need be updated rather than re-computing total cost. 
+    """
+    grid_size = state["grid_size"]
+
+    max_length = 2 * (grid_size + 1)        # used to weight the random number generator responsible for choosing nets in perturb().
+
+    for net in state["nets"]:
+        cell_i, cell_j = net["cells"]
+
+        x_i, y_i = state["cells"][cell_i]["position"]
+        x_j, y_j = state["cells"][cell_j]["position"]
+
+        wire_length = abs(x_i - x_j) + abs(y_i - y_j)
+
+        net["length"] = wire_length
+        net["weight"] = wire_length / max_length
+
+    return state
+
 # search_ring is essentially a helper function designed for use in the perturb() function. 
 def search_ring(state: dict, target_coordinates: tuple[int, int], grid_size: int, seed: int = None) -> tuple[int, int]:
     """
