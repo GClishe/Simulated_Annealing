@@ -139,49 +139,49 @@ def propose_move(state: dict, seeds: list[int, int, int] = [None, None, None]) -
                 "Net is missing 'length'/'weight'. Call annotate_net_lengths_and_weights(state) before propose_move()."
             )
 
-        if any(state["cells"][cell_name]["fixed"] is False for cell_name in net["cells"]):
-            nets.append(net)
+        if any(state["cells"][cell_name]["fixed"] is False for cell_name in net["cells"]):          # checks to see if either of the cells in the net are fixed or not
+            nets.append(net)                                                                        # if so, add this net to the nets list. Same wigh weights list below. 
             weights.append(net["weight"])
 
-    if not nets:
+    if not nets:    # checks if nets is populated. 
         raise ValueError("No nets contain an unlocked cell, so no move can be proposed.")
 
     rng_net = random.Random(seeds[0])
-    chosen_net = rng_net.choices(nets, weights=weights, k=1)[0]
+    chosen_net = rng_net.choices(nets, weights=weights, k=1)[0]                                     # randomly selects one of the nets with unfixed cell(s). More weight is given to the cells that have a longer length. 
 
-    unlocked_cell_mask = [state["cells"][cell_name]["fixed"] is False for cell_name in chosen_net["cells"]]
-    unlocked_cells = np.array(chosen_net["cells"])[unlocked_cell_mask]  # len 1 or 2
+    unlocked_cell_mask = [state["cells"][cell_name]["fixed"] is False for cell_name in chosen_net["cells"]] # creates a mask that identifies which of the cells in the selected net are fixed/unfixed
+    unlocked_cells = np.array(chosen_net["cells"])[unlocked_cell_mask]                                      # applies the mask to select only the unfixed cells
 
     rng_cell = random.Random(seeds[1])
-    cell_to_move = rng_cell.choices(list(unlocked_cells), k=1)[0]
+    cell_to_move = rng_cell.choices(list(unlocked_cells), k=1)[0]                                           # randomly selects one of the unfixed cells on that net. If only one cell is unfixed, obviously that one will be chosen. Otherwise, it is a 50/50 shot.
 
-    src = state["cells"][cell_to_move]["position"]
+    src = state["cells"][cell_to_move]["position"]                                                          # src encodes the coordinates of the cell_to_move
 
-    c0, c1 = chosen_net["cells"]
-    target_cell = c1 if cell_to_move == c0 else c0
+    c0, c1 = chosen_net["cells"]                                                                            # c0, c1 are the names of the cells on the selected net
+    target_cell = c1 if cell_to_move == c0 else c0                                                          # target_cell is the cell on the net that is NOT the cell_to_move
 
-    dst = search_ring(
-        state=state,
+    dst = search_ring(                                                                                      # grabs the coordinates of the destination cell, computed according to search_ring
+        state=state,    
         target_coordinates=state["cells"][target_cell]["position"],
         grid_size=state["grid_size"],
         seed=seeds[2],
     )
 
-    swap_with = None
+    swap_with = None                                                                                        # swap_with initialized to None if dst is not occupied. 
     for cell_name, cell in state["cells"].items():
         if cell["position"] == dst:
             if cell["fixed"] is True:
-                raise ValueError("Destination occupied by fixed cell (unexpected).")
-            swap_with = cell_name
+                raise ValueError("Destination occupied by fixed cell (unexpected).")                        # throws an error if dst is already occupied by a fixed cell. This should never happen, but this is just to be safe
+            swap_with = cell_name                                                                           # swap_with contains the name of the cell that is currently occupying dst
             break
 
     return {
-        "net_name": chosen_net.get("name", ""),
-        "cell_to_move": cell_to_move,
-        "src": src,
-        "dst": dst,
-        "swap_with": swap_with,
-        "target_cell": target_cell,
+        "net_name": chosen_net.get("name", ""), # name of the net that is being chosen 
+        "cell_to_move": cell_to_move,           # name of the cell on net_name that is being moved (or at least the one for which a move is proposed)
+        "src": src,                             # original coordinates of the cell that we are proposing to move
+        "dst": dst,                             # coordinates of the destination for the cell we are moving
+        "swap_with": swap_with,                 # name of the cell that occupies dst, if one exists (otherwise None)
+        "target_cell": target_cell,             # name of the cell on net_name that is *not* being chosen to move. cell_to_move is trying to be close as possible to target_cell.
     }
 
 def accept_move(d_cost: int, T: int, k: int, seed: int) -> bool:
