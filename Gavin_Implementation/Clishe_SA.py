@@ -49,7 +49,7 @@ print(state)
 start_time = time.perf_counter()
 print("Starting...")
 
-MASTER_SEED = 12345
+MASTER_SEED = 121418525
 master = random.Random(MASTER_SEED) 
 
 # random.Random(MASTER_SEED) constructs an RNG object whose output depends (deterministically) on MASTER_SEED.
@@ -64,14 +64,16 @@ master = random.Random(MASTER_SEED)
 # algorithm will be the the same as long as MASTER_SEED remains unchanged. 
 
 T_min = 0.1
-NUM_MOVES_PER_T_STEP = 250
-
-
-
+NUM_MOVES_PER_T_STEP = 500
 T = 40_000
 
 curr_solution = annotate_net_lengths_and_weights(state)     # we start by adding length and weight fields to each net.
-print(*state['nets'][:10], sep='\n')                # prints the first 10 nets. unpacks them and separates by new line for readability
+#plot_placement(curr_solution)
+print("First 10 nets of the current solution are: ", *state['nets'][:10], sep='\n')                # prints the first 10 nets. unpacks them and separates by new line for readability
+current_cost = cost(curr_solution)
+
+best_solution = deepcopy(curr_solution)
+best_cost = deepcopy(current_cost)
 
 while T > T_min:
     for i in range(NUM_MOVES_PER_T_STEP):
@@ -81,13 +83,31 @@ while T > T_min:
         s3 = master.getrandbits(32)
         s4 = master.getrandbits(32)
 
+        # create a dictionary that contains information about the proposed move. Does not actually modify `state`. Propose_move uses three random numbers. 
+        proposal_info = propose_move(state=curr_solution, seeds=[s1,s2,s3])                                 
+
+        # compute the cost of making this change. save the potential new cost to new_cost, the change in cost to delta_cost, and the potential net updates to net_updates. Still no change has actually been made
+        new_cost, delta_cost, net_updates = compute_move_cost_update(state=curr_solution, proposal=proposal_info, current_cost=current_cost)
+
+        if accept_move(d_cost=delta_cost, T=T, k=1, seed=s4):
+
+            # if the move is accepted, we need to actually apply this move, which consists of modifying curr_solution using the net_updates that has already been computed. Uses proposal_info to learn about the move that is being made.
+            curr_solution = apply_proposed_move(state=curr_solution, proposal=proposal_info, net_updates=net_updates)   
+            current_cost = new_cost     # uses the already computed new_cost to update the current cost
+
+            if current_cost < best_cost:
+                best_cost = current_cost
+                best_solution = curr_solution
+    
+    T = cool(T)
         
 
 
 
-print(bestCost)
-plot_placement(bestSolution)
+print(best_cost)
+
 
 end_time = time.perf_counter()
 execution_time = end_time - start_time
 print(f"End. Execution time: {execution_time} seconds")
+plot_placement(best_solution)

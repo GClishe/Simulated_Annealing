@@ -126,7 +126,31 @@ def search_ring(state: dict, target_coordinates: tuple[int, int], grid_size: int
 
     raise ValueError("There are no available cells. Either all cells are locked or grid_size is invalid.")
 
-def propose_move(state: dict, seeds: list[int, int, int] = [None, None, None]) -> dict:
+def build_fast_lookups(state: dict) -> dict:
+    """
+    Function that builds immutable tables that are useful for searching in propose_move(). 
+    Calling this function once at the start means we wont have to build these lists at each 
+    iteration. 
+    """
+
+    
+    cell_names = list(state["cells"].keys())                        # list containing all the cell names
+
+    g = state["grid_size"]
+    all_coords = [(x, y) for x in range(g) for y in range(g)]       # list containing all coordinate pairs on the grid
+
+    fixed_positions = {cell["position"] for cell in state["cells"].values() if cell["fixed"]}   # set containing all the coordinates of fixed cells on the grid
+
+    pos_to_cell = {cell["position"]: name for name, cell in state["cells"].items()}             # dict containing coordinate: cell name pairs 
+
+    return {
+        "cell_names": cell_names,
+        "all_coords": all_coords,
+        "fixed_positions": fixed_positions,
+        "pos_to_cell": pos_to_cell
+    }
+
+def propose_move(state: dict, seeds: list[int, int, int] = [None, None, None], random_move_chance: float = 0.2, lookups: dict | None = None) -> dict:
     """
     Proposes a single move for simulated annealing. Assumes that annotate_net_lengths_and_weights() has 
     already been called, since each net must have 'length' and 'weight' fields. Does not modify `state`, 
@@ -143,6 +167,51 @@ def propose_move(state: dict, seeds: list[int, int, int] = [None, None, None]) -
         'target_cell': str
       }
     """
+ 
+    if not (0.0 <= random_move_chance <= 1.0):
+        raise ValueError("random_move_chance must be in [0, 1].")
+    
+    if lookups is None:
+        lookups = build_fast_lookups(state)         # builds lookups if none are provided. This would be costly though. 
+    
+    cell_names = lookups["cell_names"]              # grabs the cell names
+    all_coords = lookups['all_coords']              # grabs all the coordinates on the grid
+    fixed_positions = lookups['fixed_positions']    # grabs all the fixed positions on the grid
+    pos_to_cell = lookups['pos_to_cell']            # grabs all coordinate: cell name pairs
+
+    # decide if a random move will be made
+    rng_branch = random.Random(seeds[3])            # seeds a random number generator used to decide if random mode is used
+    if rng_branch.random() < random_move_chance:
+        rng_rand = random.Random(seeds[4])          # seeds a random number generator used to pick a random cell
+
+        while True:
+            cell_to_move = rng_rand.choice(cell_names)          # randomly chooses one of the cells          
+            if state['cells'][cell_to_move]['fixed'] is False:  # makes sure that the cell chosen is unfixed.
+                break
+        src = state['cells'][cell_to_move]['position']          # coordinates of the cell being moved
+
+        while True:
+            dst = rng_rand.choice(all_coords)                   # randomly selects a destination coordinates
+            if dst not in fixed_positions:                      # makes sure that dst is not in fixed_positions
+                break
+
+        g = state["grid_size"]
+
+        swap_with = None                                        # name of the cell that we are swapping with 
+        occupant = pos_to_cell.get(dst)                         # gets the name of the cell occupying dst. occupant == None if no cell occupies those coords. 
+        if occupant is not None and occupant != cell_to_move:
+            # dst cannot be fixed (we excluded fixed_positions), so swap is ok
+            swap_with = occupant
+
+        return {
+            "net_name": "__RANDOM__",           # no net was chosen in this random mode
+            "cell_to_move": cell_to_move,       # cell that was randomly selected to move
+            "src": src,                         # original coords of that cell
+            "dst": dst,                         # destination coords of that cell
+            "swap_with": swap_with,             # name of the cell that we are swapping with
+            "target_cell": None,                # no target cell in this random choice mode (target cell is the one that cell_to_move is trying to be close to)
+        }       
+
     nets = []
     weights = []
 
