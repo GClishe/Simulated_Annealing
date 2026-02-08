@@ -149,7 +149,11 @@ def build_fast_lookups(state: dict) -> dict:
         "pos_to_cell": pos_to_cell
     }
 
-def propose_move(state: dict, seeds: list[int, int, int] = [None, None, None], random_move_chance: float = 0.2, lookups: dict | None = None) -> dict:
+def propose_move(state: dict,
+                 seeds: list[int, int, int, int, int] = [None, None, None, None, None],
+                 random_move_chance: float = 0.2,
+                 lookups: dict | None = None
+                    ) -> dict:
     """
     Proposes a single move for simulated annealing. Assumes that annotate_net_lengths_and_weights() has 
     already been called, since each net must have 'length' and 'weight' fields. Does not modify `state`, 
@@ -158,6 +162,8 @@ def propose_move(state: dict, seeds: list[int, int, int] = [None, None, None], r
 
     There is a chance (depending on random_move_chance) that the move proposed is completely random. In this case,
     the selected cell is random and the selected destination is also random. 
+
+    Lookups is a lookup table that should be generated once before the SA algorithm starts iterating.
 
     Returns a dict describing the proposal:
       {
