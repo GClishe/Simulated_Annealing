@@ -66,43 +66,24 @@ master = random.Random(MASTER_SEED)
 T_min = 0.1
 NUM_MOVES_PER_T_STEP = 250
 
-currSolution = deepcopy(state)
-bestSolution = deepcopy(currSolution)
-bestCost = cost(currSolution)
+
 
 T = 40_000
 
-unfix_all(currSolution)
+curr_solution = annotate_net_lengths_and_weights(state)     # we start by adding length and weight fields to each net.
+print(*state['nets'][:10], sep='\n')                # prints the first 10 nets. unpacks them and separates by new line for readability
+
 while T > T_min:
     for i in range(NUM_MOVES_PER_T_STEP):
-        # settign deterministic seeds that differ on each iteration. See comments above. 
+        # setting deterministic seeds that differ on each iteration. See comments above. 
         s1 = master.getrandbits(32)
         s2 = master.getrandbits(32)
         s3 = master.getrandbits(32)
         s4 = master.getrandbits(32)
 
-        curr_cost = cost(currSolution)
-        if curr_cost < bestCost:
-            bestCost = curr_cost
-            bestSolution = deepcopy(currSolution)
+        
 
-        try:
-            nextSol = perturb(deepcopy(currSolution), seeds=[s1, s2, s3])
-        except ValueError:
-            #print(f"Iteration {i} at T={T} ran out of unfixed cells. Best cost so far: {bestCost}. Unfixing and moving to next T.")
-            break
 
-        next_cost = cost(nextSol)
-        d_cost = next_cost - curr_cost
-
-        if accept_move(d_cost, T, k=1, seed=s4):
-            currSolution = nextSol
-
-        #if i == NUM_MOVES_PER_T_STEP - 1:
-            #print(f"{NUM_MOVES_PER_T_STEP} iterations at T={T} reached. Best cost so far: {bestCost}. Unfixing and moving to next T.")
-
-    unfix_all(currSolution)
-    T = cool(T)
 
 print(bestCost)
 plot_placement(bestSolution)
