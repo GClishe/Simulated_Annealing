@@ -8,10 +8,6 @@ import time
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 
-def cool(T: int) -> float: 
-    # defines the cooling schedule for the temperature T
-    return 0.95*T
-
 #def cost(state: dict) -> int:
 #    """
 #    Return cost associated with a particular state. Cost is the total manhattan distance 

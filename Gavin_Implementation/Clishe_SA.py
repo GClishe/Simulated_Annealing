@@ -44,7 +44,9 @@ state = deepcopy(data) #without the deepcopy, each time data is modified in this
 #     ]
 # }
 ###########################################################################################
-
+def cool(T: int) -> float: 
+    # defines the cooling schedule for the temperature T
+    return 0.95*T
 
 start_time = time.perf_counter()
 print("Starting...")
@@ -66,7 +68,7 @@ master = random.Random(MASTER_SEED)
 
 T_min = 0.1
 NUM_MOVES_PER_T_STEP = 250
-T = 40_000
+T = 40000
 
 curr_solution = annotate_net_lengths_and_weights(state)     # we start by adding length and weight fields to each net.
 #plot_placement(curr_solution)
