@@ -132,7 +132,6 @@ def build_fast_lookups(state: dict) -> dict:
     Calling this function once at the start means we wont have to build these lists at each 
     iteration. 
     """
-
     
     cell_names = list(state["cells"].keys())                        # list containing all the cell names
 
@@ -156,6 +155,9 @@ def propose_move(state: dict, seeds: list[int, int, int] = [None, None, None], r
     already been called, since each net must have 'length' and 'weight' fields. Does not modify `state`, 
     so it is no longer necessary to create a deepcopy of `state` each time a new move is proposed (unlike in
     previous iteration). 
+
+    There is a chance (depending on random_move_chance) that the move proposed is completely random. In this case,
+    the selected cell is random and the selected destination is also random. 
 
     Returns a dict describing the proposal:
       {
@@ -350,7 +352,12 @@ def compute_move_cost_update(state: dict, proposal: dict, current_cost: float) -
     new_cost = current_cost + delta                 # if delta is negative, the new cost is lower. Otherwise it is larger. 
     return new_cost, delta, net_updates             # returns a tuple containing the new TOTAL cost after the proposed net, the change in the total cost, and all of the nets being updated. 
 
-def apply_proposed_move(state: dict, proposal: dict, net_updates: list[dict] | None = None) -> dict:
+def apply_proposed_move(
+    state: dict,
+    proposal: dict,
+    net_updates: list[dict] | None = None,
+    lookups: dict | None = None,
+) -> dict:
     """
     Applies the previously proposed placement move to the current placement state by updating
     cell coordinates and updating affected net data (such as lengths and weights). 
@@ -361,6 +368,10 @@ def apply_proposed_move(state: dict, proposal: dict, net_updates: list[dict] | N
     (from the compute_move_cost_update() function) is given, then this function does not recompute
     anything. If no list of net updates is provided, this function will compute the updates. 
     
+    If `lookups` is provided, it is updated here.
+      - lookups["pos_to_cell"] is updated for the moved (and swapped) cell(s)
+      - lookups["fixed_positions"] is unchanged here (since this function does not change fixed flags)
+
     :param state: Current placement state.
     :type state: dict
     :param proposal: Dictionary describing the proposed move. Must contain the keys
@@ -371,39 +382,63 @@ def apply_proposed_move(state: dict, proposal: dict, net_updates: list[dict] | N
                         produced by compute_move_cost_update(). Each dictionary must 
                         specify the affected net index along with its new length and weight.
     :type net_updates: list[dict] | None
+    :param lookups: Optional cached lookups from build_fast_lookups(state):
+                    {"pos_to_cell": ..., "fixed_positions": ..., "cell_names": ..., "all_coords": ...}
     :return: The updated placement state. The returned value is the same object as the input state.
     :rtype: dict
     """
-    moved = proposal["cell_to_move"]                        # name of the cell being moved
-    src = proposal["src"]                                   # original coordinates of the cell being moved
-    dst = proposal["dst"]                                   # destination coords of the cell being moved
-    swap_with = proposal.get("swap_with", None)             # name of the cell that is being swapped, if one exists. 
+    moved = proposal["cell_to_move"]                     # name of the cell being moved
+    src = proposal["src"]                                # original coordinates of the cell being moved         
+    dst = proposal["dst"]                                # destination coords of the cell being moved
+    swap_with = proposal.get("swap_with", None)          # name of the cell being swapped, if one exists. 
 
-    # updates coordinates of moved cells in `state`
-    if swap_with is None:                                   # if there is no cell being swapped:
-        state["cells"][moved]["position"] = dst             # updates the coordinates of the cell being moved to the destination coords. Notice that we no longer fix the position of this cell (unlike in previous iterations)
-    else:
-        state["cells"][moved]["position"] = dst             # if there is a cell being swapped, update the coordinates of the moving cell to the desination
-        state["cells"][swap_with]["position"] = src         # update the coordintes of the cell being swapped to the original coordinates of the cell that is being moved.
+    # next two lines store references to the global lookups[...] object. So when pos_to_cell is modified, lookups[...] will be as well.
+    pos_to_cell = lookups.get("pos_to_cell") if lookups is not None else None               # grabs the dicitonary containing current coordinate: cell name pairs. Once the move is accepted, we need to modify this.
+    fixed_positions = lookups.get("fixed_positions") if lookups is not None else None       # grabs the set containing the fixed positions. this one will not need to be updated
+
+    # safety check to make sure that the destination is valid
+    if fixed_positions is not None and dst in fixed_positions:
+        raise ValueError("Destination is a fixed position; refusing to apply move.")
+
+    # additional safety checks. Makes sure that the original coordinates for the cell we are moving is correct. Does same thing with the cell being swapped. These two lines might save some time if we comment out, but probably not much.
+    if state["cells"][moved]["position"] != src:
+        raise ValueError("Proposal 'src' does not match current state for moved cell (stale proposal?).")
+    if swap_with is not None and state["cells"][swap_with]["position"] != dst:
+        raise ValueError("Proposal 'dst' does not match current state for swap_with cell (stale proposal?).")
+
+    
+    state["cells"][moved]["position"] = dst             # updates the coordinates of the cell being moved to the destination coords. 
+    if swap_with is not None:               
+        state["cells"][swap_with]["position"] = src     # also updates the coordinates of the cell that we are swapping. 
+
+    # now we also need to update the coordinates stored in pos_to_cell. We are modifying pos_to_cell, which points to the lookups['pos_to_cell'] object. Therefore, when we modify pos_to_cell, the lookups dict will change globally.
+    if pos_to_cell is not None:
+        if pos_to_cell.get(src) == moved:           # if the name of the cell corresponding to the src coordinates is the cell being moved (this should be the case)
+            pos_to_cell.pop(src, None)              # then, get rid of it. If src does not exist, then None is returned instead of throwing an error. 
+        
+        pos_to_cell[dst] = moved                    # after the move, the coordinates dst now correspond to the name of the cell that we just placed there
+
+        if swap_with is not None:                   # if we are making a swap
+            pos_to_cell[src] = swap_with            # then, the coordinates src now corresopnd with the name of the cell we are swapping with 
 
     # updates net data
-    if net_updates is not None:                             # use the net_updates list[dict] that was output in compute_move_cost_update to replace affected nets with the already computed metadata
-        for upd in net_updates:                             # each upd dictionary contains the changes on a particular net
-            net = state["nets"][upd["net_index"]]           # grabs the net dicitonary in the state[`nets`] list at index upd['net_index']. assigns to `net` variable.
-            net["length"] = upd["new_length"]               # updates the length of the new net
-            net["weight"] = upd["new_weight"]               # updates the weight of the new net. 
-        return state                                        # returning state (rather than nothing at all) is not necessary. However, in the SA alogorithm `state = apply_proposed_state(...)` makes it slightly more obvious that state mutation is occuring
-
-    # if a net_updates list is not provided, we need to compute the new length and weight of each net. The code below is the same in the compute_move_cost_update() function. 
-    touched_cells = {moved}
+    if net_updates is not None:                     # use the net_updates list that was output in compute_move_cost_update to replace affected nets with the already computed metadata
+        for upd in net_updates:                     # each upd dictionary contains the changes on a particular net
+            net = state["nets"][upd["net_index"]]   # grabs the net dictionary in the state['nets'] list at index upd['net_index']. Assigns to net variable
+            net["length"] = upd["new_length"]       # updates the length of the new net
+            net["weight"] = upd["new_weight"]       # updates the weight of the new net
+        return state                                # returning state (rather than nothing at all) is not necessary. However, in the SA alogorithm `state = apply_proposed_state(...)` makes it slightly more obvious that state mutation is occuring
+    
+    # if a net_updates list is not provided, we need to compute the new length and weight of each net. The code below is the same as in the compute_move_cost_update() function. 
+    touched = {moved}
     if swap_with is not None:
-        touched_cells.add(swap_with)
+        touched.add(swap_with)
 
     max_length = 2 * (state["grid_size"] - 1)
 
     for net in state["nets"]:
         a, b = net["cells"]
-        if (a not in touched_cells) and (b not in touched_cells):
+        if (a not in touched) and (b not in touched):
             continue
         ax, ay = state["cells"][a]["position"]
         bx, by = state["cells"][b]["position"]
@@ -411,7 +446,7 @@ def apply_proposed_move(state: dict, proposal: dict, net_updates: list[dict] | N
         net["length"] = new_len
         net["weight"] = new_len / max_length
 
-    return state    # Again, it is not necessary that we actually return state. the state parameter is passed by reference, so any mutations we already did inside the function have already happened, regardless of what we return. 
+    return state            # Again, it is not necessary that we actually return state. the state parameter is passed by reference, so any mutations we already did inside the function have already happened, regardless of what we return. 
 
 def accept_move(d_cost: int, T: int, k: int, seed: int) -> bool:
     """

@@ -74,6 +74,7 @@ current_cost = cost(curr_solution)
 
 best_solution = deepcopy(curr_solution)
 best_cost = deepcopy(current_cost)
+lookups = build_fast_lookups(curr_solution)     # should only need to be run once since none of the iterables in lookups will change when a move is made. 
 
 while T > T_min:
     for i in range(NUM_MOVES_PER_T_STEP):
