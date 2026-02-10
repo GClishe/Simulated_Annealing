@@ -113,11 +113,18 @@ def build_fast_lookups(state: dict) -> dict:
 
     pos_to_cell = {cell["position"]: name for name, cell in state["cells"].items()}             # dict containing coordinate: cell name pairs 
 
+    cell_to_net_idx = {name: [] for name in cell_names}                                         # building a dict matching each cell name to a list of all the nets it is on.
+    for idx, net in enumerate(state['nets']):
+        a, b = net['cells']                             # grabbing  both cell names on that net
+        cell_to_net_idx[a].append(idx)                  # adding the net containing cell a to the list corresponding to cell a
+        cell_to_net_idx[b].append(idx)                  # same for cell b
+
     return {
         "cell_names": cell_names,
         "all_coords": all_coords,
         "fixed_positions": fixed_positions,
-        "pos_to_cell": pos_to_cell
+        "pos_to_cell": pos_to_cell,
+        "cell_to_net_idx": cell_to_net_idx      
     }
 
 def propose_move(state: dict,
@@ -246,7 +253,11 @@ def propose_move(state: dict,
     }
 
 
-def compute_move_cost_update(state: dict, proposal: dict, current_cost: float) -> tuple[float, float, list[dict]]:
+def compute_move_cost_update(state: dict,
+                             proposal: dict, 
+                             current_cost: float,
+                             lookups: dict
+    ) -> tuple[float, float, list[dict]]:
     """
     Computes the change in total cost resulting from a proposed move without modifying `state` (in 
     other words, without actually making the move). This function evaluates the effect of moving a
@@ -262,6 +273,8 @@ def compute_move_cost_update(state: dict, proposal: dict, current_cost: float) -
     state['nets'] and state['cells'] if the proposed move ends up being accepted. Each dictionary in 
     this list contains the index of the net, the name of the net, the old length of the net, the new 
     length of the net, the old weight of the net, and the new weight of the net. 
+
+    Uses lookups['cell_to_net_idx'] to avoid scanning every net.
     
     :param state: Current placement state.
     :type state: dict
@@ -270,6 +283,8 @@ def compute_move_cost_update(state: dict, proposal: dict, current_cost: float) -
     :type proposal: dict
     :param current_cost: Current total placement cost prior to applying the proposed move.
     :type current_cost: float
+    :param lookups: Dictionary containing useful information used in this function.
+    :type lookups: dict
     :return: A tuple containing:
              (1) the new total cost after applying the proposed move,
              (2) how much the total cost changed (positive or negative),
@@ -284,25 +299,24 @@ def compute_move_cost_update(state: dict, proposal: dict, current_cost: float) -
     swap_with = proposal.get("swap_with", None)                         # grabs the name of the cell that is being swapped. If there is no swap, grab None. Technically proposal['swap_with'] already contains None if there is no swap, but this is added safety. 
 
     virtual_pos = {moved: proposal["dst"]}                              # assigns virtual_pos = {cell_to_move: coordinates of destination}
+    cell_to_net_idx = lookups['cell_to_net_idx']                        # grabs the already computed list of net indices that each cell contains
+    affected_net_idx = set(cell_to_net_idx[moved])                      # nets containing the moved cell. using a set beacuse they are faster to search than lists
+
     if swap_with is not None:
         virtual_pos[swap_with] = proposal["src"]                        # if a cell is being swapped, virtual_pos = {cell_to_move: coordinates of destination, name_of_swapped_cell: original coords of cell_to_move}
-
-    touched_cells = {moved}                                             # touched_cells is a set containing the cell that is being moved and the cell that is swapped (if exists). This is necessary to identify the nets that must be updated. 
-    if swap_with is not None:
-        touched_cells.add(swap_with)
+        affected_net_idx.update(cell_to_net_idx[swap_with])             #include nets containing the swapped cell to the set of affected nets
 
     max_length = 2 * (state["grid_size"] - 1)
 
     delta = 0                                                           # delta will be used to track how much the total cost changes as nets are updated with new positions
     net_updates: list[dict] = []                                        # creates new nets in the same format as in the state variable
 
-    for idx, net in enumerate(state["nets"]):                           # idx indexes each net in state['nets'] to keep track of ones that contain `moved` and `swap_with`
+    
+
+    for idx in affected_net_idx:                                        # idx indexes each net that is affected by this proposed move
+        net = state['nets'][idx]                                        # net assigned to the name of the net we are looking at
         if "length" not in net or "weight" not in net:
             raise ValueError("Net missing 'length'/'weight'. Run annotate_net_lengths_and_weights(state) first.")   # this error will be thrown if annotate_net_lengths_and_weights() has not been called
-
-        a, b = net["cells"]                                             # a,b are the names of the cells on the net
-        if (a not in touched_cells) and (b not in touched_cells):       # if moved or swap_with are not on this net, skip to the next idx, net iteration. 
-            continue  
         
         # everything below here executes when the net contains one of the cells being moved
         old_len = net["length"]                                         # grab the old net length 
