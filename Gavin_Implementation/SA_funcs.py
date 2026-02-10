@@ -8,31 +8,6 @@ import time
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 
-#def cost(state: dict) -> int:
-#    """
-#    Return cost associated with a particular state. Cost is the total manhattan distance 
-#    separating connected cells (those on the same net). Distance between connected cells
-#    is |x_i - x_j| + |y_i-y_j|. cost(state) returns sum of all distances.  
-#    
-#    :param state: Placement state describing grid size, cell locations, and net connectivity.
-#    :type state: dict
-#    :return: Total Manhattan wirelength summed over all nets.
-#    :rtype: int
-#    """
-#    # a potential optimization once the rest of the algorithm is written might be to instead only recompute the length of nets connected to a moved cell. 
-#
-#    total_length = 0                                     # initializes length (cost) to 0
-#    for net in state['nets']:
-#        cell_i, cell_j = net['cells']                    # grabs the two connected cells on each net
-#
-#        x_i, y_i = state['cells'][cell_i]['position']     # grabs the coordinates associated with cell_i in the state['cells'] dictionary
-#        x_j, y_j = state['cells'][cell_j]['position']     # same but for cell_j
-#
-#        wire_length = abs(x_i - x_j) + abs(y_i - y_j)    # computes manhattan length between cell_i and cell_j
-#        total_length += wire_length                      # adds length of this net to the total length
-#    
-#    return total_length
-
 def cost(state: dict) -> int:
     """
     Computes the total cost as the sum of all individual net lengths.

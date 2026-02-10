@@ -1,10 +1,11 @@
-from Gavin_Implementation.Place_Benchmarks.Place_100 import data
+from Ptest_Tests.Ptest_500 import data
+#from Gavin_Implementation.Place_Benchmarks.Place_10000 import data
 import random
 from copy import deepcopy
 import numpy as np
 import math
 import time
-from Gavin_Implementation.SA_funcs import *
+from SA_funcs import *
 
 #matplotlib is used for visualization/debugging. I do not expect to need it in the final result
 import matplotlib.pyplot as plt
@@ -15,44 +16,16 @@ from matplotlib.patches import Rectangle
 state = deepcopy(data) #without the deepcopy, each time data is modified in this file, the information in the memory location holding `data` is modified. Then if you rerun the "import data" line, it imports the still-modified value held in the cache, NOT the variable actually in the Place_5 file. Therefore, a copy must be made to ensure that the original data variable that we import is not modified.
 #print(state)
 
-##################################### Example placement state ############################
-# data = {
-#     'grid_size': 3,
-# 
-#     'cells': {
-#         'CELL_0': {'type': 'MOVABLE', 'fixed': False, 'position': (1, 2)},
-#         'CELL_1': {'type': 'MOVABLE', 'fixed': False, 'position': (1, 0)},
-#         'CELL_2': {'type': 'MOVABLE', 'fixed': False, 'position': (0, 0)},
-#         'CELL_3': {'type': 'MOVABLE', 'fixed': False, 'position': (0, 1)},
-#         'IO_0': {'type': 'IO', 'fixed': True, 'position': (2, 1)},
-#     },
-# 
-#     'nets': [
-#         {'name': 'NET_0', 'cells': ('IO_0', 'CELL_2')},
-#         {'name': 'NET_1', 'cells': ('CELL_0', 'CELL_1')},
-#         {'name': 'NET_10', 'cells': ('CELL_1', 'IO_0')},
-#         {'name': 'NET_11', 'cells': ('CELL_1', 'CELL_2')},
-#         {'name': 'NET_12', 'cells': ('CELL_3', 'CELL_2')},
-#         {'name': 'NET_2', 'cells': ('CELL_0', 'CELL_1')},
-#         {'name': 'NET_3', 'cells': ('CELL_2', 'CELL_3')},
-#         {'name': 'NET_4', 'cells': ('CELL_3', 'CELL_2')},
-#         {'name': 'NET_5', 'cells': ('CELL_2', 'CELL_0')},
-#         {'name': 'NET_6', 'cells': ('CELL_0', 'CELL_3')},
-#         {'name': 'NET_7', 'cells': ('CELL_3', 'CELL_2')},
-#         {'name': 'NET_8', 'cells': ('IO_0', 'CELL_3')},
-#         {'name': 'NET_9', 'cells': ('CELL_0', 'IO_0')},
-#     ]
-# }
-###########################################################################################
 def cool(T: int) -> float: 
     # defines the cooling schedule for the temperature T
-    return 0.95*T
+    return 0.98*T
 
 start_time = time.perf_counter()
 print("Starting...")
 
+#MASTER_SEED = 543672361                            # use this line if you want to specify a specific seed
 MASTER_SEED = random.randint(1000,1000000000)
-print(MASTER_SEED)
+
 master = random.Random(MASTER_SEED) 
 
 # random.Random(MASTER_SEED) constructs an RNG object whose output depends (deterministically) on MASTER_SEED.
@@ -74,6 +47,7 @@ curr_solution = annotate_net_lengths_and_weights(state)     # we start by adding
 #plot_placement(curr_solution)
 #print("First 10 nets of the current solution are: ", *state['nets'][:10], sep='\n')                # prints the first 10 nets. unpacks them and separates by new line for readability
 current_cost = cost(curr_solution)
+initial_cost = deepcopy(current_cost)
 
 best_solution = deepcopy(curr_solution)
 best_cost = deepcopy(current_cost)
@@ -107,11 +81,22 @@ while T > T_min:
     
     T = cool(T)
 
-
-print(best_cost)
-
+print(f"Initial cost was {initial_cost}; best cost is {best_cost}")
 
 end_time = time.perf_counter()
 execution_time = end_time - start_time
 print(f"End. Execution time: {execution_time} seconds")
+print(f"Master seed is {MASTER_SEED}")
 #plot_placement(best_solution)
+
+
+
+#100 benchmark best solution so far: 777. Cooling schedule: 0.98T, k=1, T = 40000, Tmin = 0.1, moves per T = 2500, random move chance 100%, master seed = 617171369, "moved cooling schedule ... " commit version, "Execution time: 48.5148046000395 seconds"
+#100 benchmark best solution so far: 774. Cooling schedule: 0.98T, k=1, T = 40000, Tmin = 0.1, moves per T = 2500, random move chance 30%, master seed = 459280630, "moved cooling schedule ... " commit version, "Execution time: 134.6 seconds"
+#100 benchmark best solution so far: 762. Cooling schedule: 0.98T, k=1, T = 40000, Tmin = 0.1, moves per T = 2500, random move chance 30%, master seed = 163934370, "moved cooling schedule ... " commit version, "Execution time: 137 seconds"
+#10,000 benchmark has best solution of 1,192,898. Cooling schedule is 0.98, T=40k, Tmin=0.1, moves per T = 250, random move chance 100%, master seed = 226433316, same commit version, execution time: 324 seconds.
+#ptest_10000 has best soln of 380,269 compared to initial 1,247,867. same params as above. master seed is 711008386. took 126 seconds
+#ptest_25000 has best soln of 1,846,142 compared to to initial cost of 4,921,479. Same parameters. 323 seconds. Seed of 505162987
+#ptest_10000 has new best soln of 200,285 when random move is 50%. 400 seconds. seed of 708677375
+#ptest_10000 has new best soln of 175,570 with 30% random move, same params above. 504 seconds. Seed of 648228016
+#ptest_10000 has new best soln of 111,891 with 10% random move and 500 moves per step. Otherwise everything same. Seed of 220475152. Took 1306 seconds (21 mins)
