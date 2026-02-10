@@ -1,5 +1,5 @@
 from Ptest_Tests.Ptest_10000 import data
-#from Place_Benchmarks.Place_100 import data
+#from Place_Benchmarks.Place_25000 import data
 import random
 from copy import deepcopy
 import numpy as np
@@ -23,26 +23,25 @@ def cool(T: int) -> float:
 start_time = time.perf_counter()
 print("Starting...")
 
-MASTER_SEED = 708677375                          # use this line if you want to specify a specific seed
-#MASTER_SEED = random.randint(1000,1000000000)
+#MASTER_SEED = 708677375                          # use this line if you want to specify a specific seed
+MASTER_SEED = random.randint(1000,1000000000)
 
 master = random.Random(MASTER_SEED) 
 
-# random.Random(MASTER_SEED) constructs an RNG object whose output depends (deterministically) on MASTER_SEED.
-# master.getrandbits(32) will be used to generate four random (but deterministic) seeds from master on each iteration. 
-# successive getrandbits(32) calls results in different numbers being called each time. For example, 
-# s1 = master.getrandbits(32) --> 1789368711
-# s2 = master.getrandbits(32) --> 3146859322
-# s3 = master.getrandbits(32) --> 43676229
-# s4 = master.getrandbits(32) --> 3522623596
-# These four seeds will be generated (and will be different) on each iteration. The perturb() function will use three of them and the 
-# accept_move() function will use the other one. But since everything is derived from this random.Random object, the end result of the whole
-# algorithm will be the the same as long as MASTER_SEED remains unchanged. 
+# Creates random number generators (not random numbers) seeded by master.getrandbits(32) which is different each time it is called. As long as MASTER_SEED is the same, these RNG objects will also be the same per iteration (but each are different from each other)
+rngs = {
+    "net": random.Random(master.getrandbits(32)),       # used in propose_move()
+    "cell": random.Random(master.getrandbits(32)),      # used in propose_move()
+    "ring": random.Random(master.getrandbits(32)),      # used in search_ring() inside propose_move()
+    "branch": random.Random(master.getrandbits(32)),    # used in propose_move()
+    "rand": random.Random(master.getrandbits(32)),      # used in propose_move()
+    "accept": random.Random(master.getrandbits(32)),    # used in accept_move()
+} 
 
 T_min = 0.1
 T = 40000
-MOVES_PER_T_STEP = 250
-curr_random_move_chance = 0.3  
+MOVES_PER_T_STEP = 500
+curr_random_move_chance = 0.1
 
 curr_solution = annotate_net_lengths_and_weights(state)     # we start by adding length and weight fields to each net.
 #plot_placement(curr_solution)
@@ -57,17 +56,6 @@ lookups = build_fast_lookups(curr_solution)     # Only needs to be run once. loo
 while T > T_min:
     #print(f"Current temperature: {T}.")
     for i in range(MOVES_PER_T_STEP):
-
-        # Creates random number generators (not random numbers) seeded by master.getrandbits(32) which is different each time it is called. Again though, as long as MASTER_SEED is the same, these six random number generators will also yield the same result. 
-        rngs = {
-            "net": random.Random(master.getrandbits(32)),       # used in propose_move()
-            "cell": random.Random(master.getrandbits(32)),      # used in propose_move()
-            "ring": random.Random(master.getrandbits(32)),      # used in search_ring() inside propose_move()
-            "branch": random.Random(master.getrandbits(32)),    # used in propose_move()
-            "rand": random.Random(master.getrandbits(32)),      # used in propose_move()
-            "accept": random.Random(master.getrandbits(32)),    # used in accept_move()
-        }
-
         # create a dictionary that contains information about the proposed move. Does not actually modify `state`. Propose_move uses three random numbers. 
         proposal_info = propose_move(state=curr_solution, rngs=rngs,random_move_chance=curr_random_move_chance, lookups=lookups)                                 
 
