@@ -118,7 +118,7 @@ def build_fast_lookups(state: dict) -> dict:
         cell_to_net_idx[a].append(idx)                  # adding the net containing cell a to the list corresponding to cell a
         cell_to_net_idx[b].append(idx)                  # same for cell b
 
-    net_weights = [net['weights'] for net in state['nets']] # this list will also need to be updated in apply_proposed_move()
+    net_weights = [net['weight'] for net in state['nets']] # this list will also need to be updated in apply_proposed_move()
 
     return {
         "cell_names": cell_names,
