@@ -1,4 +1,4 @@
-from Ptest_Tests.Ptest_500 import data
+from Ptest_Tests.Ptest_10000 import data
 #from Gavin_Implementation.Place_Benchmarks.Place_10000 import data
 import random
 from copy import deepcopy
@@ -23,8 +23,8 @@ def cool(T: int) -> float:
 start_time = time.perf_counter()
 print("Starting...")
 
-#MASTER_SEED = 543672361                            # use this line if you want to specify a specific seed
-MASTER_SEED = random.randint(1000,1000000000)
+MASTER_SEED = 648228016                            # use this line if you want to specify a specific seed
+#MASTER_SEED = random.randint(1000,1000000000)
 
 master = random.Random(MASTER_SEED) 
 
@@ -64,10 +64,10 @@ while T > T_min:
         s6 = master.getrandbits(32)
 
         # create a dictionary that contains information about the proposed move. Does not actually modify `state`. Propose_move uses three random numbers. 
-        proposal_info = propose_move(state=curr_solution, seeds=[s1,s2,s3, s5, s6],random_move_chance=1, lookups=lookups)                                 
+        proposal_info = propose_move(state=curr_solution, seeds=[s1,s2,s3, s5, s6],random_move_chance=0.3, lookups=lookups)                                 
 
         # compute the cost of making this change. save the potential new cost to new_cost, the change in cost to delta_cost, and the potential net updates to net_updates. Still no change has actually been made
-        new_cost, delta_cost, net_updates = compute_move_cost_update(state=curr_solution, proposal=proposal_info, current_cost=current_cost)
+        new_cost, delta_cost, net_updates = compute_move_cost_update(state=curr_solution, proposal=proposal_info, current_cost=current_cost, lookups=lookups)
 
         if accept_move(d_cost=delta_cost, T=T, k=1, seed=s4):
 
