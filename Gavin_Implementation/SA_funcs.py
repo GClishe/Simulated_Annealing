@@ -315,6 +315,7 @@ def compute_move_cost_update(state: dict,
 
     for idx in affected_net_idx:                                        # idx indexes each net that is affected by this proposed move
         net = state['nets'][idx]                                        # net assigned to the name of the net we are looking at
+        a, b = net["cells"]                                             # grabs the names of the cells on this net
         if "length" not in net or "weight" not in net:
             raise ValueError("Net missing 'length'/'weight'. Run annotate_net_lengths_and_weights(state) first.")   # this error will be thrown if annotate_net_lengths_and_weights() has not been called
         
