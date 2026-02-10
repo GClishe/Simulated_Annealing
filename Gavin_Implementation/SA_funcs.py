@@ -46,7 +46,12 @@ def annotate_net_lengths_and_weights(state: dict) -> dict:
     return state
 
 # search_ring is essentially a helper function designed for use in the perturb() function. 
-def search_ring(state: dict, target_coordinates: tuple[int, int], fixed_positions: set[tuple[int, int]], grid_size: int, seed: int = None) -> tuple[int, int]:
+def search_ring(state: dict,
+                target_coordinates: tuple[int, int], 
+                fixed_positions: set[tuple[int, int]], 
+                grid_size: int,
+                rng: random.Random, 
+                ) -> tuple[int, int]:
     """
     Searches outward from a target coordinate in Manhattan distance "rings" and returns
     a randomly selected available (not locked, in-bounds) from the nearest ring. 
@@ -68,8 +73,6 @@ def search_ring(state: dict, target_coordinates: tuple[int, int], fixed_position
     :rtype: tuple[int, int]
     :raises ValueError: If no available cell exists within the grid.
     """
-    
-    rng = random.Random(seed)                                                       # creates an object that generates random sequence of numbers according to a seed. 
 
     X, Y = target_coordinates                                                       # unpacks the target_coordinates tuple to X and Y variables
 
@@ -115,16 +118,19 @@ def build_fast_lookups(state: dict) -> dict:
         cell_to_net_idx[a].append(idx)                  # adding the net containing cell a to the list corresponding to cell a
         cell_to_net_idx[b].append(idx)                  # same for cell b
 
+    net_weights = [net['weights'] for net in state['nets']] # this list will also need to be updated in apply_proposed_move()
+
     return {
         "cell_names": cell_names,
         "all_coords": all_coords,
         "fixed_positions": fixed_positions,
         "pos_to_cell": pos_to_cell,
-        "cell_to_net_idx": cell_to_net_idx      
+        "cell_to_net_idx": cell_to_net_idx,
+        "net_weights": net_weights
     }
 
 def propose_move(state: dict,
-                 seeds: list[int, int, int, int, int] = [None, None, None, None, None],
+                 rngs: dict,
                  random_move_chance: float = 0.2,
                  lookups: dict | None = None
                     ) -> dict:
@@ -162,10 +168,9 @@ def propose_move(state: dict,
     pos_to_cell = lookups['pos_to_cell']            # grabs all coordinate: cell name pairs
 
     # decide if a random move will be made
-    rng_branch = random.Random(seeds[3])            # seeds a random number generator used to decide if random mode is used
+    rng_branch = rngs['branch']                     # grabs random number generator that will be used to decide if a random move will occur
+    rng_rand = rngs['rand']                         # grabs a different random number generator that will be used to decide what random move happens. 
     if rng_branch.random() < random_move_chance:
-        rng_rand = random.Random(seeds[4])          # seeds a random number generator used to pick a random cell
-
         while True:
             cell_to_move = rng_rand.choice(cell_names)          # randomly chooses one of the cells          
             if state['cells'][cell_to_move]['fixed'] is False:  # makes sure that the cell chosen is unfixed.
@@ -176,8 +181,6 @@ def propose_move(state: dict,
             dst = rng_rand.choice(all_coords)                   # randomly selects a destination coordinates
             if dst not in fixed_positions:                      # makes sure that dst is not in fixed_positions
                 break
-
-        g = state["grid_size"]
 
         swap_with = None                                        # name of the cell that we are swapping with 
         occupant = pos_to_cell.get(dst)                         # gets the name of the cell occupying dst. occupant == None if no cell occupies those coords. 
@@ -194,34 +197,26 @@ def propose_move(state: dict,
             "target_cell": None,                # no target cell in this random choice mode (target cell is the one that cell_to_move is trying to be close to)
         }       
 
-    nets = []
-    weights = []
+    rng_net = rngs['net']
+    rng_cell = rngs['cell']
 
-    for net in state["nets"]:
-        if "weight" not in net or "length" not in net:
-            raise ValueError(
-                "Net is missing 'length'/'weight'. Call annotate_net_lengths_and_weights(state) before propose_move()."
-            )
+    nets = state['nets']
+    net_weights = lookups['net_weights']
 
-        if any(state["cells"][cell_name]["fixed"] is False for cell_name in net["cells"]):          # checks to see if either of the cells in the net are fixed or not
-            nets.append(net)                                                                        # if so, add this net to the nets list. Same wigh weights list below. 
-            weights.append(net["weight"])
+    while True:
+        idx = rng_net.choices(range(len(nets)), weights = net_weights, k=1)[0]                      # randomly chooses an index correspodning to a net, with weights specified in net_weights
+        chosen_net = nets[idx]                                                                      # uses that index to select that net
+        c0, c1 = chosen_net['cells']                                                                # grabs the cell names on that net
+        if (state['cells'][c0]['fixed'] is False) or (state['cells'][c1]['fixed'] is False):        # reruns this loop only if both of the cells on the net are fixed. This is very unlikely to pass 1 iteration. 
+            break 
 
-    if not nets:    # checks if nets is populated. 
-        raise ValueError("No nets contain an unlocked cell, so no move can be proposed.")
-
-    rng_net = random.Random(seeds[0])
-    chosen_net = rng_net.choices(nets, weights=weights, k=1)[0]                                     # randomly selects one of the nets with unfixed cell(s). More weight is given to the cells that have a longer length. 
-
-    unlocked_cell_mask = [state["cells"][cell_name]["fixed"] is False for cell_name in chosen_net["cells"]] # creates a mask that identifies which of the cells in the selected net are fixed/unfixed
-    unlocked_cells = np.array(chosen_net["cells"])[unlocked_cell_mask]                                      # applies the mask to select only the unfixed cells
-
-    rng_cell = random.Random(seeds[1])
-    cell_to_move = rng_cell.choices(list(unlocked_cells), k=1)[0]                                           # randomly selects one of the unfixed cells on that net. If only one cell is unfixed, obviously that one will be chosen. Otherwise, it is a 50/50 shot.
+    if (state["cells"][c0]["fixed"] is False) and (state["cells"][c1]["fixed"] is False):   
+        cell_to_move = c0 if rng_cell.random() < 0.5 else c1                                        # if both of the cells on the chosen net are unfixed, then we use rng_cell to randomly choose one as cell_to_move.
+    else:
+        cell_to_move = c0 if (state["cells"][c0]["fixed"] is False) else c1                         # If one of the cells is fixed, then we choose the other one. 
 
     src = state["cells"][cell_to_move]["position"]                                                          # src encodes the coordinates of the cell_to_move
 
-    c0, c1 = chosen_net["cells"]                                                                            # c0, c1 are the names of the cells on the selected net
     target_cell = c1 if cell_to_move == c0 else c0                                                          # target_cell is the cell on the net that is NOT the cell_to_move
 
     dst = search_ring(                                                                                      # grabs the coordinates of the destination cell, computed according to search_ring
@@ -229,7 +224,7 @@ def propose_move(state: dict,
         target_coordinates=state["cells"][target_cell]["position"],
         fixed_positions=fixed_positions,
         grid_size=state["grid_size"],
-        seed=seeds[2]
+        rng=rngs['ring']
     )
 
     swap_with = None                                        # swap_with initialized to None if dst is not occupied. 
@@ -388,11 +383,11 @@ def apply_proposed_move(
     if fixed_positions is not None and dst in fixed_positions:
         raise ValueError("Destination is a fixed position; refusing to apply move.")
 
-    # additional safety checks. Makes sure that the original coordinates for the cell we are moving is correct. Does same thing with the cell being swapped. These two lines might save some time if we comment out, but probably not much.
-    if state["cells"][moved]["position"] != src:
-        raise ValueError("Proposal 'src' does not match current state for moved cell (stale proposal?).")
-    if swap_with is not None and state["cells"][swap_with]["position"] != dst:
-        raise ValueError("Proposal 'dst' does not match current state for swap_with cell (stale proposal?).")
+    # additional safety checks. Makes sure that the original coordinates for the cell we are moving is correct
+    #if state["cells"][moved]["position"] != src:
+    #    raise ValueError("Proposal 'src' does not match current state for moved cell (stale proposal?).")
+    #if swap_with is not None and state["cells"][swap_with]["position"] != dst:
+    #    raise ValueError("Proposal 'dst' does not match current state for swap_with cell (stale proposal?).")
 
     
     state["cells"][moved]["position"] = dst             # updates the coordinates of the cell being moved to the destination coords. 
@@ -409,12 +404,18 @@ def apply_proposed_move(
         if swap_with is not None:                   # if we are making a swap
             pos_to_cell[src] = swap_with            # then, the coordinates src now corresopnd with the name of the cell we are swapping with 
 
+    net_weights = lookups.get("net_weights") if lookups is not None else None   # grabs the list containing all net weights
+
     # updates net data
     if net_updates is not None:                     # use the net_updates list that was output in compute_move_cost_update to replace affected nets with the already computed metadata
         for upd in net_updates:                     # each upd dictionary contains the changes on a particular net
             net = state["nets"][upd["net_index"]]   # grabs the net dictionary in the state['nets'] list at index upd['net_index']. Assigns to net variable
             net["length"] = upd["new_length"]       # updates the length of the new net
             net["weight"] = upd["new_weight"]       # updates the weight of the new net
+
+            if net_weights is not None:
+                net_weights[upd['net_index']] = upd['new_weight']   # updates the net_weights list in the lookup table. 
+
         return state                                # returning state (rather than nothing at all) is not necessary. However, in the SA alogorithm `state = apply_proposed_state(...)` makes it slightly more obvious that state mutation is occuring
     
     # if a net_updates list is not provided, we need to compute the new length and weight of each net. The code below is the same as in the compute_move_cost_update() function. 
@@ -436,7 +437,10 @@ def apply_proposed_move(
 
     return state            # Again, it is not necessary that we actually return state. the state parameter is passed by reference, so any mutations we already did inside the function have already happened, regardless of what we return. 
 
-def accept_move(d_cost: int, T: int, k: int, seed: int) -> bool:
+def accept_move(d_cost: int, 
+                T: int, 
+                k: int, 
+                rng: random.Random) -> bool:
     """
     Decides whether or not to accept a proposed move. A move that does not increase cost (d_cost <= 0) is always
     accepted. A move that increases cost is accepted probabilistically according to the boltzmann factor
@@ -459,7 +463,7 @@ def accept_move(d_cost: int, T: int, k: int, seed: int) -> bool:
     if d_cost <= 0:
         return True
     boltz = math.exp(-1*d_cost / (k*T))
-    r = random.Random(seed).random()        # chooses random number between 0 and 1 with a seed
+    r = rng.random()        # chooses random number between 0 and 1 with a seed
     if r < boltz:
         return True
     else: 
