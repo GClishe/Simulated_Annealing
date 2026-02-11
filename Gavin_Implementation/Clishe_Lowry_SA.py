@@ -9,15 +9,17 @@
 #Make sure it is placed in the correct folder, and the result will appear in the corresponding separate folder as outlined above
 #In some cases we abstracted away from the standard SA parameters in favor of desired probabilities and number of temperature steps
 #This allows the algorithm to scale with the problem size to some degree, as well as better control the execution time
+#This algorithm also has an advanced preturb function where good proposed moves are calculated
+#You can tune the ratio of random vs optimal moves below, set it to 1 for completly random operation
 
 #Tunable parameters
 dataName = 'Place_25000'    #Name of netlist file. Need to add .py to the end of provided files. Make sure original folder names are used and that result folders exist
 probGrid = 0.90             #Probablility of accepting a solution that regresses cost by the width of the gird at the begining. This allows scaling with the problem size
 probEnd = 0.000001          #Probability of accepting any bad move at the end
-tempCount = 250             #Number of temperature stpes to cycle through
-MOVES_PER_T_STEP = 2500      #Number of moves to attempt at each temperature step
-curr_random_move_chance = 1 #Percent of proposed moves that are randomly generated
+tempCount = 250             #Number of temperature steps to cycle through between initial and final temp during the geometric cooling cycle
+MOVES_PER_T_STEP = 2500     #Number of moves to attempt at each temperature step
 K_BOLTZ = 1                 #Constant to change how the acceptance rate of bad moves is calculated. Leave this at 1 and change temperatures
+curr_random_move_chance = 1 #Percent of proposed moves that are randomly generated
 MASTER_SEED = 708677375     #Set seed to make RND reproducable. Comment this line and uncomment the line right after the import block use a random seed
 
 #Set import / export folder names based on data set
