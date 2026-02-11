@@ -1,4 +1,4 @@
-from Ptest_Tests.Ptest_10000 import data
+from Ptest_Tests.Ptest_50 import data
 #from Place_Benchmarks.Place_100 import data
 import random
 from copy import deepcopy
@@ -18,7 +18,7 @@ state = deepcopy(data) #without the deepcopy, each time data is modified in this
 
 def cool(T: int) -> float: 
     # defines the cooling schedule for the temperature T
-    return 0.98*T
+    return 0.99*T
 
 start_time = time.perf_counter()
 print("Starting...")
@@ -40,7 +40,7 @@ rngs = {
 
 T_min = 0.1
 T = 40000
-MOVES_PER_T_STEP = 2500
+MOVES_PER_T_STEP = 5000
 curr_random_move_chance = 0.1
 K_BOLTZ = 1
 
@@ -120,6 +120,10 @@ execution_time = end_time - start_time
 print(f"End. Execution time: {execution_time} seconds")
 print(f"Master seed is {MASTER_SEED}")
 #plot_placement(best_solution)
+
+best_solution = strip_net_length_weight(best_solution)
+
+verify_solution_integrity(original_state=state, best_solution=best_solution)            # returns None if all the checks pass. raises valueError if any fail. 
 
 ################################################# PLOTS ###################################################
 fig, axes = plt.subplots(4, 1, figsize=(10, 10))
