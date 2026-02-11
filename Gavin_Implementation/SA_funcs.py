@@ -468,3 +468,93 @@ def accept_move(d_cost: int,
         return True
     else: 
         return False
+
+
+# The next two functions were generated with chatGPT. The full conversation is/will be included in the report. All comments (not docstrings) were written by me. 
+def strip_net_length_weight(state: dict) -> dict:
+    """
+    Removes 'length' and 'weight' keys from every net dict in-place (if present).
+    Use this on best_solution right before exporting/serializing so it matches the original `data` schema.
+
+    Returns the same object for convenience.
+    """
+    for net in state.get("nets", []):
+        net.pop("length", None)         # gets rid of the length item if present
+        net.pop("weight", None)         # gets rid of the weight item if present
+    return state
+
+def verify_solution_integrity(original_state: dict, best_solution: dict) -> None:
+    """
+    Verifies that `best_solution` is a legal placement derived from `original_state` under your rules.
+
+    Checks:
+      1) Same grid_size
+      2) Same cell set; per-cell 'type' and 'fixed' flags match
+      3) Same nets (same count; each net has same 'name' and same ordered 2-tuple in 'cells')
+      4) All cell coordinates in best_solution are within grid and unique (single-occupancy)
+      5) Any cell that is fixed in original_state has identical coordinates in best_solution
+
+    Raises ValueError with a specific message if any check fails.
+    Returns None if all checks pass.
+    """
+    
+    # check if grid size matches
+    if original_state.get("grid_size") != best_solution.get("grid_size"):
+        raise ValueError(f"grid_size mismatch: {original_state.get('grid_size')} vs {best_solution.get('grid_size')}")
+
+    g = original_state["grid_size"]
+
+    orig_cells = original_state.get("cells", {})            # grabs all cell dicts in the initial state dataset
+    best_cells = best_solution.get("cells", {})             # grabs all cell dicts in the final state dataset
+
+    if set(orig_cells.keys()) != set(best_cells.keys()):                     # this condition checks that the names of the cells in orig_cells are the same as the names of the cells in best_cells
+        missing = set(orig_cells.keys()) - set(best_cells.keys())            # if there is a mismatch, this line and the following two lines identify what the mismatch is (do we have extra cells? less cells? that kind of thing.)
+        extra = set(best_cells.keys()) - set(orig_cells.keys())
+        raise ValueError(f"Cell set mismatch. Missing={sorted(missing)} Extra={sorted(extra)}")
+
+
+    for name, oc in orig_cells.items():         # loop thru each cell in orig_cells. name is the name of the cell, oc is the data of the cell
+        bc = best_cells[name]                   # grabs the data corresopnding to `name` in best_cells 
+        if oc.get("type") != bc.get("type"):
+            raise ValueError(f"Cell '{name}' type mismatch: {oc.get('type')} vs {bc.get('type')}")              # raise an error if that cell has changed type (io vs movable)
+        if oc.get("fixed") != bc.get("fixed"):
+            raise ValueError(f"Cell '{name}' fixed-flag mismatch: {oc.get('fixed')} vs {bc.get('fixed')}")      # raise an error if it has changed fixed status
+
+    orig_nets = original_state.get("nets", [])  # grabs the nets in original_state
+    best_nets = best_solution.get("nets", [])   # grabs the nets in best_solution
+
+    if len(orig_nets) != len(best_nets):
+        raise ValueError(f"Netlist length mismatch: {len(orig_nets)} vs {len(best_nets)}")                      # if the amount of nets is different, raise an error
+
+    for i, (on, bn) in enumerate(zip(orig_nets, best_nets)):    # (on, bn) is a tuple containing the net dicts corresponding to index i in the orig_nets and best_nets lists
+        if on.get("name") != bn.get("name"):
+            raise ValueError(f"Net[{i}] name mismatch: {on.get('name')} vs {bn.get('name')}")                   # if those two nets have different names, raise an error
+        if tuple(on.get("cells")) != tuple(bn.get("cells")):
+            raise ValueError(
+                f"Net[{i}] cells mismatch on net '{on.get('name')}': {on.get('cells')} vs {bn.get('cells')}"    # if those two nets dont have the same cells, raise an error. 
+            )
+
+    seen_positions: set[tuple[int, int]] = set()
+    for name, bc in best_cells.items():             # loop thru each cell in best_cells. name is the name of the cell, bc is the data of the cell
+        pos = bc.get("position")                    # grab the coordinates of that cell
+        if (not isinstance(pos, tuple)) or len(pos) != 2:
+            raise ValueError(f"Cell '{name}' has invalid position format: {pos}")                               # if the coordinates for the cell is not a tuple or does not have exactly 2 elements, raise an error
+
+        x, y = pos  # unpacks the coordintaes into x and y
+        if not (isinstance(x, int) and isinstance(y, int)):
+            raise ValueError(f"Cell '{name}' position must be ints: {pos}")                                     # raise an error if at least one of the values in the coordinate pair are not ints. 
+        if not (0 <= x < g and 0 <= y < g):
+            raise ValueError(f"Cell '{name}' out of bounds: {pos} (grid_size={g})")                             # makes sure the coordinate pair is within the bounds of the grid
+
+        if pos in seen_positions:
+            raise ValueError(f"Non-unique placement: multiple cells share position {pos}")                      # raise an error if two cells share the same coordinate
+        seen_positions.add(pos)
+
+    for name, oc in orig_cells.items():     # loop thru each cell in orig_cells. name is the name of the cell, oc is the data of the cell
+        if oc.get("fixed") is True:
+            if oc.get("position") != best_cells[name].get("position"):
+                raise ValueError(
+                    f"Fixed cell '{name}' moved: {oc.get('position')} -> {best_cells[name].get('position')}"    # raise an error if any of the fixed cells have changed position. 
+                )
+
+    return None
