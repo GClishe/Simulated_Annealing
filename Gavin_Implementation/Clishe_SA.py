@@ -1,4 +1,4 @@
-from Ptest_Tests.Ptest_100 import data
+from Ptest_Tests.Ptest_10000 import data
 #from Place_Benchmarks.Place_100 import data
 import random
 from copy import deepcopy
@@ -40,7 +40,7 @@ rngs = {
 
 T_min = 0.1
 T = 40000
-MOVES_PER_T_STEP = 500
+MOVES_PER_T_STEP = 2500
 curr_random_move_chance = 0.1
 K_BOLTZ = 1
 
