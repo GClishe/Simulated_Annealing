@@ -152,11 +152,11 @@ axes[3].set_title("Final Cost per Annealing Step")
 axes[3].plot(anneal_steps, end_costs, label="Final cost")
 
 window = 10
-if len(end_costs) >= window:
-    moving_avg = np.convolve(end_costs, np.ones(window) / window, mode="valid")
-    ma_steps = anneal_steps[window - 1:]  # align x-axis with valid convolution
-    axes[3].plot(ma_steps, moving_avg, linestyle="--", linewidth=2,
-                 label=f"Moving avg (window size={window} iterations)", color='r')
+
+moving_avg = np.convolve(end_costs, np.ones(window) / window, mode="valid")
+ma_steps = anneal_steps[window - 1:]  # align x-axis with valid convolution
+axes[3].plot(ma_steps, moving_avg, linestyle="--", linewidth=2,
+                label=f"Moving avg (window size={window} iterations)", color='r')
     
 axes[3].set_ylabel("Cost Function")
 axes[3].set_xlabel("Annealing Step")
@@ -165,13 +165,3 @@ axes[3].legend()
 
 plt.tight_layout()
 plt.show()
-
-
-#100 benchmark best solution so far: 777. Cooling schedule: 0.98T, k=1, T = 40000, Tmin = 0.1, moves per T = 2500, random move chance 100%, master seed = 617171369, "moved cooling schedule ... " commit version, "Execution time: 48.5148046000395 seconds"
-#100 benchmark best solution so far: 762. Cooling schedule: 0.98T, k=1, T = 40000, Tmin = 0.1, moves per T = 2500, random move chance 30%, master seed = 163934370, "moved cooling schedule ... " commit version, "Execution time: 115 seconds"
-#10,000 benchmark has best solution of 1,192,898. Cooling schedule is 0.98, T=40k, Tmin=0.1, moves per T = 250, random move chance 100%, master seed = 226433316, same commit version, execution time: 324 seconds.
-#ptest_10000 has best soln of 380,269 compared to initial 1,247,867. same params as above. master seed is 711008386. took 126 seconds
-#ptest_25000 has best soln of 1,846,142 compared to to initial cost of 4,921,479. Same parameters. 323 seconds. Seed of 505162987
-#ptest_10000 has new best soln of 200,285 when random move is 50%. 400 seconds. seed of 708677375
-#ptest_10000 has new best soln of 175,570 with 30% random move, same params above. 347 seconds. Seed of 648228016
-#ptest_10000 has new best soln of 111,891 with 10% random move and 500 moves per step. Otherwise everything same. Seed of 220475152. Took 1306 seconds (21 mins)
