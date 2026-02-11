@@ -557,4 +557,5 @@ def verify_solution_integrity(original_state: dict, best_solution: dict) -> None
                     f"Fixed cell '{name}' moved: {oc.get('position')} -> {best_cells[name].get('position')}"    # raise an error if any of the fixed cells have changed position. 
                 )
 
+    print("All checks pass.")
     return None
