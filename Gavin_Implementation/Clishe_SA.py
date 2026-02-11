@@ -1,5 +1,5 @@
-from Ptest_Tests.Ptest_10000 import data
-#from Place_Benchmarks.Place_25000 import data
+from Ptest_Tests.Ptest_15000 import data
+#from Place_Benchmarks.Place_100 import data
 import random
 from copy import deepcopy
 import numpy as np
@@ -40,7 +40,7 @@ rngs = {
 
 T_min = 0.1
 T = 40000
-MOVES_PER_T_STEP = 500
+MOVES_PER_T_STEP = 1000
 curr_random_move_chance = 0.1
 
 curr_solution = annotate_net_lengths_and_weights(state)     # we start by adding length and weight fields to each net.
