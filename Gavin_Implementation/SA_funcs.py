@@ -1,8 +1,5 @@
 import random
-from copy import deepcopy
-import numpy as np
 import math
-import time
 
 #matplotlib is used for visualization/debugging. I do not expect to need it in the final result
 import matplotlib.pyplot as plt
@@ -44,6 +41,10 @@ def annotate_net_lengths_and_weights(state: dict) -> dict:
         net["weight"] = wire_length / max_length
 
     return state
+
+# defines the cooling schedule for the temperature T
+def cool(coolRate: float, T: int) -> float: 
+    return coolRate*T
 
 # search_ring is essentially a helper function designed for use in the perturb() function. 
 def search_ring(state: dict,
