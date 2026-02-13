@@ -4,6 +4,11 @@
 #Result folders should also be prepared ./Clishe_Lowry_Ptest_Tests and ./Clishe_Lowry_Place_Benchmarks
 #Make sure the file extention .py is added to all data set files
 #Once ready, simply run this file by opening a terminal window in this directory and running: python3 Clishe_Lowry_SA.py
+#Initial cost, final cost, execution time, and some graphs covering the process will be displayed
+#Graphs will be saved to the results folders as .png
+#To track memory usage, use the command "/usr/bin/time -v python3 ./Clishe_Lowry_SA.py" and look at Maximum Resident Set Size
+#The times reported here will include things like export and time spent looking at the output graph, the reported time
+#from the prograpm itself is more accurate as it just includes the time spent optimizing the layout
 
 #At the top of this file are tunable parameters. The first is the file name of the desired test (without the .py)
 #Make sure it is placed in the correct folder, and the result will appear in the corresponding separate folder as outlined above
@@ -191,4 +196,5 @@ axes[3].grid(True)
 axes[3].legend()
 
 plt.tight_layout()
+plt.savefig(f"Clishe_Lowry_{folderName}/{dataName}.png", dpi=200)
 plt.show()
