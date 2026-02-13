@@ -9,17 +9,17 @@
 #Make sure it is placed in the correct folder, and the result will appear in the corresponding separate folder as outlined above
 #In some cases we abstracted away from the standard SA parameters in favor of desired probabilities and number of temperature steps
 #This allows the algorithm to scale with the problem size to some degree, as well as better control the execution time
-#This algorithm also has an advanced preturb function where good proposed moves are calculated
-#You can tune the ratio of random vs optimal moves below, set it to 1 for completly random operation
+#This algorithm also has an advanced preturb function where good proposed moves are calculated by moving cells in a net closer together
+#You can tune the ratio of random vs caculated moves below, set it to 1 for completly random operation
 
 #Tunable parameters
-dataName = 'Place_25000'    #Name of netlist file. Need to add .py to the end of provided files. Make sure original folder names are used and that result folders exist
-probGrid = 0.90             #Probablility of accepting a solution that regresses cost by the width of the gird at the begining. This allows scaling with the problem size
-probEnd = 0.000001          #Probability of accepting any bad move at the end
-tempCount = 250             #Number of temperature steps to cycle through between initial and final temp during the geometric cooling cycle
-MOVES_PER_T_STEP = 2500     #Number of moves to attempt at each temperature step
+dataName = 'Ptest_500'    #Name of netlist file. Need to add .py to the end of provided files. Make sure original folder names are used and that result folders exist
+T = 0                       #Initial temp determines probability of accepting a bad solution at the start. Leave at 0 to use calculated value based on grid size
+probEnd = 0.0000454         #Probability of accepting any bad move at the end
+tempCount = 25000           #Number of temperature steps to cycle through between initial and final temp during the geometric cooling cycle
+MOVES_PER_T_STEP = 250      #Number of moves to attempt at each temperature step
 K_BOLTZ = 1                 #Constant to change how the acceptance rate of bad moves is calculated. Leave this at 1 and change temperatures
-curr_random_move_chance = 1 #Percent of proposed moves that are randomly generated
+curr_random_move_chance = 1 #Percent of proposed moves that are randomly generated. Non random moves pick a random net and tries to move one of its cells as close as possible to the other
 MASTER_SEED = 708677375     #Set seed to make RND reproducable. Comment this line and uncomment the line right after the import block use a random seed
 
 #Set import / export folder names based on data set
@@ -56,8 +56,9 @@ rngs = {
     "accept": random.Random(master.getrandbits(32)),    # used in accept_move()
 } 
 
-#Compute intial temp, final temp, and cooling rate based on desired number of temp steps, and the initial/final bad move acceptance rate
-T = -data['grid_size']/np.log(probGrid)
+#Compute intial temp, final temp, and cooling rate based on desired number of temp steps, final bad move acceptance rate, and grid size
+if T == 0:                                      #If T is 0 use calculated value, if not use given value
+    T = 5.9729*(data['grid_size'])**1.1874      #Calculate optimal starting temp for grid size
 T_min = -1/np.log(probEnd)
 coolRate = (T_min/T)**(1/tempCount)
 
