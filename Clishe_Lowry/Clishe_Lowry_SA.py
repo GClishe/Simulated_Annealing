@@ -18,14 +18,14 @@
 #You can tune the ratio of random vs caculated moves below, set it to 1 for completly random operation
 
 #Tunable parameters
-dataName = 'Place_5000'    #Name of netlist file. Need to add .py to the end of provided files. Make sure original folder names are used and that result folders exist
-T = 0                       #Initial temp determines probability of accepting a bad solution at the start. Leave at 0 to use calculated value based on grid size
-T_min = 0.1                 #Set end temp. When set to 0 will run 25000 iterations to 0.1 then scale Tf for number of iterations
-tempCount = 2000000          #Number of temperature steps to cycle through between initial and final temp during the geometric cooling cycle. Leave at 0 for ~1 hour run on place benchmarks
-MOVES_PER_T_STEP = 250      #Number of moves to attempt at each temperature step. Suggest leaving at 250 and scaling number of temp steps instead
-K_BOLTZ = 1                 #Constant to change how the acceptance rate of bad moves is calculated. Leave this at 1 and change temperatures
-curr_random_move_chance = 1 #Percent of proposed moves that are randomly generated. Non random moves pick a bad net and tries to move one of its cells as close as possible to the other
-MASTER_SEED = 708677375     #Set seed to make RND reproducable. Comment this line and uncomment the line right after the import block use a random seed
+dataName = 'Ptest_5000'         #Name of netlist file. Need to add .py to the end of provided files. Make sure original folder names are used and that result folders exist
+T = 0                           #Initial temp determines probability of accepting a bad solution at the start. Leave at 0 to use calculated value based on grid size
+T_min = 0.1                     #Set end temp. When set to 0 will run 25000 iterations to 0.1 then scale Tf for number of iterations
+tempCount = 60000               #Number of temperature steps to cycle through between initial and final temp during the geometric cooling cycle. Leave at 0 for ~1 hour run on place benchmarks
+MOVES_PER_T_STEP = 250          #Number of moves to attempt at each temperature step. Suggest leaving at 250 and scaling number of temp steps instead
+K_BOLTZ = 1                     #Constant to change how the acceptance rate of bad moves is calculated. Leave this at 1 and change temperatures
+curr_random_move_chance = -1    #Percent of proposed moves that are randomly generated. Non random moves take longer but pick a bad net and tries to move one of its cells as close as possible to the other. -1 uses 1 for Place and 0.8 for Ptest
+MASTER_SEED = 708677375         #Set seed to make RND reproducable. Comment this line and uncomment the line right after the import block use a random seed
 
 #Set import / export folder names based on data set
 if dataName[:2] == 'Pt':        
@@ -39,8 +39,11 @@ import random
 from copy import deepcopy
 import numpy as np
 import time
-from SA_funcs import *
 import pprint
+import random
+import math
+import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
 
 #MASTER_SEED = random.randint(1000,1000000000)          # use this line to generate a random seed
 
@@ -68,6 +71,568 @@ coolRate = (T_min/T)**(1/tempCount)
 if T_min == 0:                                  #If T_min is 0 use truncated T_min 
     coolRate = (0.1/T)**(1/25000)               
     T_min = T*coolRate**tempCount
+if curr_random_move_chance == -1:               #If -1 set for random move chance, use calculated values
+    if folderName == 'Ptest_Tests':             #Set random move chance to 1 for place and .8 for ptest
+        curr_random_move_chance = 0.8
+    else:
+        curr_random_move_chance = 1
+
+def cost(state: dict) -> int:
+    """
+    Computes the total cost as the sum of all individual net lengths.
+    Requires that state['nets'] dicts have fields 'length'. Thus, run 
+    annotate_net_lengths_and_weights() before calling this function. 
+    """
+
+    total_cost = 0
+    for net in state['nets']:
+        total_cost += net['length']
+    
+    return total_cost
+
+def annotate_net_lengths_and_weights(state: dict) -> dict:
+    """
+    Modifies the state dictionary, adding length and weight parameters to each net. 
+    Computing the total cost later on will be easier, as it will only need to add
+    up all of the wire_length values. Additionally, when a move is accepted, only 
+    affected nets need be updated rather than re-computing total cost. 
+    """
+    grid_size = state["grid_size"]
+
+    max_length = 2 * (grid_size - 1)        # used to weight the random number generator responsible for choosing nets in perturb().
+
+    for net in state["nets"]:
+        cell_i, cell_j = net["cells"]
+
+        x_i, y_i = state["cells"][cell_i]["position"]
+        x_j, y_j = state["cells"][cell_j]["position"]
+
+        wire_length = abs(x_i - x_j) + abs(y_i - y_j)
+
+        net["length"] = wire_length
+        net["weight"] = wire_length / max_length
+
+    return state
+
+# defines the cooling schedule for the temperature T
+def cool(coolRate: float, T: int) -> float: 
+    return coolRate*T
+
+# search_ring is essentially a helper function designed for use in the perturb() function. 
+def search_ring(state: dict,
+                target_coordinates: tuple[int, int], 
+                fixed_positions: set[tuple[int, int]], 
+                grid_size: int,
+                rng: random.Random, 
+                ) -> tuple[int, int]:
+    """
+    Searches outward from a target coordinate in Manhattan distance "rings" and returns
+    a randomly selected available (not locked, in-bounds) from the nearest ring. 
+
+    First searches ring of Manhattan distance of 1 from the target, and proceeds searching
+    until the ring size equals twice the grid_size parameter. If multiple cells exist at the
+    same minimum distance, one is chosen randomly. Seed parameter ensures reproducability. 
+    
+    :param state: Placement state dictionary.
+    :type state: dict
+    :param target_coordinates: (x, y) coordinates of the target cell.
+    :type target_coordinates: tuple[int, int]
+    :param grid_size: Size of the (square) grid. Valid coordinates satisfy
+                    0 <= x < grid_size and 0 <= y < grid_size.
+    :type grid_size: int
+    :param seed: Seed for random number generator.
+    :type: int
+    :return: Coordinates (x, y) of a nearest available cell.
+    :rtype: tuple[int, int]
+    :raises ValueError: If no available cell exists within the grid.
+    """
+
+    X, Y = target_coordinates                                                       # unpacks the target_coordinates tuple to X and Y variables
+
+    def in_bounds(coord: tuple[int, int], grid_size: int) -> bool:
+        # helper function that decides if a coordinate is is in the grid. 
+        return (0 <= coord[0] < grid_size) and (0 <= coord[1] < grid_size)
+
+    for ring_size in range(1, 2 * grid_size + 1):                                   # ring_size (manhattan distance to target) can be at most 2*grid_size
+        candidate_moves = set()                                                     # the goal is to randomly select one cell that is ring_size away from the target. Set is chosen over list to remove duplicates
+
+        for i in range(ring_size + 1):
+            j = ring_size - i                                                       # with this setup, we will iterate through all i,j pairs such that i + j = ring_size. This will allow us to generate all coordinates on the ring
+            coords = [(X+i, Y+j), (X+i, Y-j), (X-i, Y+j), (X-i, Y-j)]               # this actually creates the coordinates. However, it does allow duplicates (for example, (X+i, Y+j) and (X+i, Y-j) are the same when j==0). This is why candidate_moves is a set.
+
+            for coord in coords:                                                    # checking each of the four coordinates generated by an i,j pair
+                if in_bounds(coord, grid_size) and coord not in fixed_positions:
+                    candidate_moves.add(coord)                                      # if it is both in the boundary and not locked, then we add it to the candidate moves. 
+
+        if candidate_moves:   
+            return rng.choice(tuple(candidate_moves))                               # choose a random value in candidate_moves (converted to tuple first, as .choice doesnt work with sets) according to the seed. 
+
+    raise ValueError("There are no available cells. Either all cells are locked or grid_size is invalid.")
+
+def build_fast_lookups(state: dict) -> dict:
+    """
+    Function that builds immutable tables that are useful for searching in propose_move(). 
+    Calling this function once at the start means we wont have to build these lists at each 
+    iteration. 
+    """
+    
+    cell_names = list(state["cells"].keys())                        # list containing all the cell names
+
+    g = state["grid_size"]
+    all_coords = [(x, y) for x in range(g) for y in range(g)]       # list containing all coordinate pairs on the grid
+
+    fixed_positions = {cell["position"] for cell in state["cells"].values() if cell["fixed"]}   # set containing all the coordinates of fixed cells on the grid
+
+    pos_to_cell = {cell["position"]: name for name, cell in state["cells"].items()}             # dict containing coordinate: cell name pairs 
+
+    cell_to_net_idx = {name: [] for name in cell_names}                                         # building a dict matching each cell name to a list of all the nets it is on.
+    for idx, net in enumerate(state['nets']):
+        a, b = net['cells']                             # grabbing  both cell names on that net
+        cell_to_net_idx[a].append(idx)                  # adding the net containing cell a to the list corresponding to cell a
+        cell_to_net_idx[b].append(idx)                  # same for cell b
+
+    net_weights = [net['weight'] for net in state['nets']] # this list will also need to be updated in apply_proposed_move()
+
+    return {
+        "cell_names": cell_names,
+        "all_coords": all_coords,
+        "fixed_positions": fixed_positions,
+        "pos_to_cell": pos_to_cell,
+        "cell_to_net_idx": cell_to_net_idx,
+        "net_weights": net_weights
+    }
+
+def propose_move(state: dict,
+                 rngs: dict,
+                 random_move_chance: float = 0.2,
+                 lookups: dict | None = None
+                    ) -> dict:
+    """
+    Proposes a single move for simulated annealing. Assumes that annotate_net_lengths_and_weights() has 
+    already been called, since each net must have 'length' and 'weight' fields. Does not modify `state`, 
+    so it is no longer necessary to create a deepcopy of `state` each time a new move is proposed (unlike in
+    previous iteration). 
+
+    There is a chance (depending on random_move_chance) that the move proposed is completely random. In this case,
+    the selected cell is random and the selected destination is also random. 
+
+    Lookups is a lookup table that should be generated once before the SA algorithm starts iterating.
+
+    Returns a dict describing the proposal:
+      {
+        'net_name': str,
+        'cell_to_move': str,
+        'src': (x, y),
+        'dst': (x, y),
+        'swap_with': str | None,   # if dst occupied by an unfixed cell
+        'target_cell': str
+      }
+    """
+ 
+    if not (0.0 <= random_move_chance <= 1.0):
+        raise ValueError("random_move_chance must be in [0, 1].")
+    
+    if lookups is None:
+        lookups = build_fast_lookups(state)         # builds lookups if none are provided. This would be costly though. 
+    
+    cell_names = lookups["cell_names"]              # grabs the cell names
+    all_coords = lookups['all_coords']              # grabs all the coordinates on the grid
+    fixed_positions = lookups['fixed_positions']    # grabs all the fixed positions on the grid
+    pos_to_cell = lookups['pos_to_cell']            # grabs all coordinate: cell name pairs
+
+    # decide if a random move will be made
+    rng_branch = rngs['branch']                     # grabs random number generator that will be used to decide if a random move will occur
+    rng_rand = rngs['rand']                         # grabs a different random number generator that will be used to decide what random move happens. 
+    if rng_branch.random() < random_move_chance:
+        while True:
+            cell_to_move = rng_rand.choice(cell_names)          # randomly chooses one of the cells          
+            if state['cells'][cell_to_move]['fixed'] is False:  # makes sure that the cell chosen is unfixed.
+                break
+        src = state['cells'][cell_to_move]['position']          # coordinates of the cell being moved
+
+        while True:
+            dst = rng_rand.choice(all_coords)                   # randomly selects a destination coordinates
+            if dst not in fixed_positions:                      # makes sure that dst is not in fixed_positions
+                break
+
+        swap_with = None                                        # name of the cell that we are swapping with 
+        occupant = pos_to_cell.get(dst)                         # gets the name of the cell occupying dst. occupant == None if no cell occupies those coords. 
+        if occupant is not None and occupant != cell_to_move:
+            # dst cannot be fixed (we excluded fixed_positions), so swap is ok
+            swap_with = occupant
+
+        return {
+            "net_name": "__RANDOM__",           # no net was chosen in this random mode
+            "cell_to_move": cell_to_move,       # cell that was randomly selected to move
+            "src": src,                         # original coords of that cell
+            "dst": dst,                         # destination coords of that cell
+            "swap_with": swap_with,             # name of the cell that we are swapping with
+            "target_cell": None,                # no target cell in this random choice mode (target cell is the one that cell_to_move is trying to be close to)
+        }       
+
+    # if random move is not chosen, we instead choose a net probabilistically based on its length. Then a cell on that net is chosen to be moved closer to its net-neighbor. 
+    rng_net = rngs['net']
+    rng_cell = rngs['cell']
+
+    nets = state['nets']
+    net_weights = lookups['net_weights']
+
+    while True:
+        idx = rng_net.choices(range(len(nets)), weights = net_weights, k=1)[0]                      # randomly chooses an index correspodning to a net, with weights specified in net_weights
+        chosen_net = nets[idx]                                                                      # uses that index to select that net
+        c0, c1 = chosen_net['cells']                                                                # grabs the cell names on that net
+        if (state['cells'][c0]['fixed'] is False) or (state['cells'][c1]['fixed'] is False):        # reruns this loop only if both of the cells on the net are fixed. This is very unlikely to pass 1 iteration. 
+            break 
+
+    if (state["cells"][c0]["fixed"] is False) and (state["cells"][c1]["fixed"] is False):   
+        cell_to_move = c0 if rng_cell.random() < 0.5 else c1                                        # if both of the cells on the chosen net are unfixed, then we use rng_cell to randomly choose one as cell_to_move.
+    else:
+        cell_to_move = c0 if (state["cells"][c0]["fixed"] is False) else c1                         # If one of the cells is fixed, then we choose the other one. 
+
+    src = state["cells"][cell_to_move]["position"]                                                          # src encodes the coordinates of the cell_to_move
+
+    target_cell = c1 if cell_to_move == c0 else c0                                                          # target_cell is the cell on the net that is NOT the cell_to_move
+
+    dst = search_ring(                                                                                      # grabs the coordinates of the destination cell, computed according to search_ring
+        state=state,    
+        target_coordinates=state["cells"][target_cell]["position"],
+        fixed_positions=fixed_positions,
+        grid_size=state["grid_size"],
+        rng=rngs['ring']
+    )
+
+    swap_with = None                                        # swap_with initialized to None if dst is not occupied. 
+    occupant = pos_to_cell.get(dst)                         # identifies the name of the cell that is at dst
+    if occupant is not None and occupant != cell_to_move:
+        if state['cells'][occupant]['fixed'] is True:
+            raise ValueError("Destination occuped by fixed cell")   # additional safety check. This should never happen though. 
+        swap_with = occupant
+
+    return {
+        "net_name": chosen_net.get("name", ""), # name of the net that is being chosen 
+        "cell_to_move": cell_to_move,           # name of the cell on net_name that is being moved (or at least the one for which a move is proposed)
+        "src": src,                             # original coordinates of the cell that we are proposing to move
+        "dst": dst,                             # coordinates of the destination for the cell we are moving
+        "swap_with": swap_with,                 # name of the cell that occupies dst, if one exists (otherwise None)
+        "target_cell": target_cell,             # name of the cell on net_name that is *not* being chosen to move. cell_to_move is trying to be close as possible to target_cell.
+    }
+
+
+def compute_move_cost_update(state: dict,
+                             proposal: dict, 
+                             current_cost: float,
+                             lookups: dict
+    ) -> tuple[float, float, list[dict]]:
+    """
+    Computes the change in total cost resulting from a proposed move without modifying `state` (in 
+    other words, without actually making the move). This function evaluates the effect of moving a
+    single cell (and swapping with another, if a swap is proposed) by recomputing the lengths and
+    weights of only the nets touched by the move.
+
+    This function assumes that annotate_net_lengths_and_weights(state) has already been called, so
+    that state['nets'] contain the required 'length' and 'weight' fields. The proposed move must be 
+    generated by proposed_move(), since this function relies on the `proposal` dictionary that is 
+    returned there. 
+
+    This function also returns a list of dictionaries containing all required information to update 
+    state['nets'] and state['cells'] if the proposed move ends up being accepted. Each dictionary in 
+    this list contains the index of the net, the name of the net, the old length of the net, the new 
+    length of the net, the old weight of the net, and the new weight of the net. 
+
+    Uses lookups['cell_to_net_idx'] to avoid scanning every net.
+    
+    :param state: Current placement state.
+    :type state: dict
+    :param proposal: Dictionary describing a proposed move, including the cell to move, source and
+                     destination coordinates, and optional swap information.
+    :type proposal: dict
+    :param current_cost: Current total placement cost prior to applying the proposed move.
+    :type current_cost: float
+    :param lookups: Dictionary containing useful information used in this function.
+    :type lookups: dict
+    :return: A tuple containing:
+             (1) the new total cost after applying the proposed move,
+             (2) how much the total cost changed (positive or negative),
+             (3) a list of dictionaries describing per-net updates for all affected nets.
+    :rtype: tuple[float, float, list[dict]]
+    """
+    
+    if "cell_to_move" not in proposal or "src" not in proposal or "dst" not in proposal:            # raise an error if the required fields are not present.
+        raise ValueError("proposal dict missing required keys (cell_to_move/src/dst).")
+
+    moved = proposal["cell_to_move"]                                    # grabs the name of the cell that we are proposing to move               
+    swap_with = proposal.get("swap_with", None)                         # grabs the name of the cell that is being swapped. If there is no swap, grab None. Technically proposal['swap_with'] already contains None if there is no swap, but this is added safety. 
+
+    virtual_pos = {moved: proposal["dst"]}                              # assigns virtual_pos = {cell_to_move: coordinates of destination}
+    cell_to_net_idx = lookups['cell_to_net_idx']                        # grabs the already computed list of net indices that each cell contains
+    affected_net_idx = set(cell_to_net_idx[moved])                      # nets containing the moved cell. using a set beacuse they are faster to search than lists
+
+    if swap_with is not None:
+        virtual_pos[swap_with] = proposal["src"]                        # if a cell is being swapped, virtual_pos = {cell_to_move: coordinates of destination, name_of_swapped_cell: original coords of cell_to_move}
+        affected_net_idx.update(cell_to_net_idx[swap_with])             #include nets containing the swapped cell to the set of affected nets
+
+    max_length = 2 * (state["grid_size"] - 1)
+
+    delta = 0                                                           # delta will be used to track how much the total cost changes as nets are updated with new positions
+    net_updates: list[dict] = []                                        # creates new nets in the same format as in the state variable
+
+    
+
+    for idx in affected_net_idx:                                        # idx indexes each net that is affected by this proposed move
+        net = state['nets'][idx]                                        # net assigned to the name of the net we are looking at
+        a, b = net["cells"]                                             # grabs the names of the cells on this net
+        if "length" not in net or "weight" not in net:
+            raise ValueError("Net missing 'length'/'weight'. Run annotate_net_lengths_and_weights(state) first.")   # this error will be thrown if annotate_net_lengths_and_weights() has not been called
+        
+        # everything below here executes when the net contains one of the cells being moved
+        old_len = net["length"]                                         # grab the old net length 
+        old_wt = net["weight"]                                          # grab the old net weight
+
+        ax, ay = virtual_pos.get(a, state["cells"][a]["position"])      # if a is the cell that we are proposing to move or is the cell being swapped, (ax,ay) contains the coordinates of its destination. If a is an unaffected cell on the net, (ax,ay) are the coordinates specified for that cell in `state`
+        bx, by = virtual_pos.get(b, state["cells"][b]["position"])      # same as above but for b. 
+        new_len = abs(ax - bx) + abs(ay - by)                           # computes the new length of the net
+        new_wt = new_len / max_length                                   # computes the new weight of the net
+ 
+        delta += (new_len - old_len)                                    # finds out how much the length of that net changes; adds to the total. No abs here, because a negative number should result in the total cost decreasing
+ 
+        net_updates.append(                                             # adds information of the updated net to net_updates. Once again, note that `state` has thusfar remained unchanged. 
+            {
+                "net_index": idx,                   # index of the updated net
+                "net_name": net.get("name", ""),    # name of the updated net
+                "old_length": old_len,              # old length of the updated net
+                "new_length": new_len,              # new length of the updated net
+                "old_weight": old_wt,               # old weight of the updated net
+                "new_weight": new_wt,               # new weight of the udpated net
+            }
+        )
+
+    new_cost = current_cost + delta                 # if delta is negative, the new cost is lower. Otherwise it is larger. 
+    return new_cost, delta, net_updates             # returns a tuple containing the new TOTAL cost after the proposed net, the change in the total cost, and all of the nets being updated. 
+
+def apply_proposed_move(
+    state: dict,
+    proposal: dict,
+    net_updates: list[dict] | None = None,
+    lookups: dict | None = None,
+) -> dict:
+    """
+    Applies the previously proposed placement move to the current placement state by updating
+    cell coordinates and updating affected net data (such as lengths and weights). 
+
+    This function updates the position of the moved cell, swaps it with another cell if the 
+    destination is already occupied by a movable cell, and then updates the lengths and weights
+    of each net that is affected by the coordinate swaps. If a precomputed list of net updates
+    (from the compute_move_cost_update() function) is given, then this function does not recompute
+    anything. If no list of net updates is provided, this function will compute the updates. 
+    
+    If `lookups` is provided, it is updated here.
+      - lookups["pos_to_cell"] is updated for the moved (and swapped) cell(s)
+      - lookups["fixed_positions"] is unchanged here (since this function does not change fixed flags)
+
+    :param state: Current placement state.
+    :type state: dict
+    :param proposal: Dictionary describing the proposed move. Must contain the keys
+                     "cell_to_move", "src", and "dst". May optionally contain "swap_with"
+                     indicating a cell to be swapped with the moved cell.
+    :type proposal: dict
+    :param net_updates: Optional list of dictionaries encoding precomputed net updates 
+                        produced by compute_move_cost_update(). Each dictionary must 
+                        specify the affected net index along with its new length and weight.
+    :type net_updates: list[dict] | None
+    :param lookups: Optional cached lookups from build_fast_lookups(state):
+                    {"pos_to_cell": ..., "fixed_positions": ..., "cell_names": ..., "all_coords": ...}
+    :return: The updated placement state. The returned value is the same object as the input state.
+    :rtype: dict
+    """
+    moved = proposal["cell_to_move"]                     # name of the cell being moved
+    src = proposal["src"]                                # original coordinates of the cell being moved         
+    dst = proposal["dst"]                                # destination coords of the cell being moved
+    swap_with = proposal.get("swap_with", None)          # name of the cell being swapped, if one exists. 
+
+    # next two lines store references to the global lookups[...] object. So when pos_to_cell is modified, lookups[...] will be as well.
+    pos_to_cell = lookups.get("pos_to_cell") if lookups is not None else None               # grabs the dicitonary containing current coordinate: cell name pairs. Once the move is accepted, we need to modify this.
+    fixed_positions = lookups.get("fixed_positions") if lookups is not None else None       # grabs the set containing the fixed positions. this one will not need to be updated
+
+    # safety check to make sure that the destination is valid
+    if fixed_positions is not None and dst in fixed_positions:
+        raise ValueError("Destination is a fixed position; refusing to apply move.")
+
+    # additional safety checks. Makes sure that the original coordinates for the cell we are moving is correct
+    #if state["cells"][moved]["position"] != src:
+    #    raise ValueError("Proposal 'src' does not match current state for moved cell (stale proposal?).")
+    #if swap_with is not None and state["cells"][swap_with]["position"] != dst:
+    #    raise ValueError("Proposal 'dst' does not match current state for swap_with cell (stale proposal?).")
+
+    
+    state["cells"][moved]["position"] = dst             # updates the coordinates of the cell being moved to the destination coords. 
+    if swap_with is not None:               
+        state["cells"][swap_with]["position"] = src     # also updates the coordinates of the cell that we are swapping. 
+
+    # now we also need to update the coordinates stored in pos_to_cell. We are modifying pos_to_cell, which points to the lookups['pos_to_cell'] object. Therefore, when we modify pos_to_cell, the lookups dict will change globally.
+    if pos_to_cell is not None:
+        if pos_to_cell.get(src) == moved:           # if the name of the cell corresponding to the src coordinates is the cell being moved (this should be the case)
+            pos_to_cell.pop(src, None)              # then, get rid of it. If src does not exist, then None is returned instead of throwing an error. 
+        
+        pos_to_cell[dst] = moved                    # after the move, the coordinates dst now correspond to the name of the cell that we just placed there
+
+        if swap_with is not None:                   # if we are making a swap
+            pos_to_cell[src] = swap_with            # then, the coordinates src now corresopnd with the name of the cell we are swapping with 
+
+    net_weights = lookups.get("net_weights") if lookups is not None else None   # grabs the list containing all net weights
+
+    # updates net data
+    if net_updates is not None:                     # use the net_updates list that was output in compute_move_cost_update to replace affected nets with the already computed metadata
+        for upd in net_updates:                     # each upd dictionary contains the changes on a particular net
+            net = state["nets"][upd["net_index"]]   # grabs the net dictionary in the state['nets'] list at index upd['net_index']. Assigns to net variable
+            net["length"] = upd["new_length"]       # updates the length of the new net
+            net["weight"] = upd["new_weight"]       # updates the weight of the new net
+
+            if net_weights is not None:
+                net_weights[upd['net_index']] = upd['new_weight']   # updates the net_weights list in the lookup table. 
+
+        return state                                # returning state (rather than nothing at all) is not necessary. However, in the SA alogorithm `state = apply_proposed_state(...)` makes it slightly more obvious that state mutation is occuring
+    
+    # if a net_updates list is not provided, we need to compute the new length and weight of each net. The code below is the same as in the compute_move_cost_update() function. 
+    touched = {moved}
+    if swap_with is not None:
+        touched.add(swap_with)
+
+    max_length = 2 * (state["grid_size"] - 1)
+
+    for net in state["nets"]:
+        a, b = net["cells"]
+        if (a not in touched) and (b not in touched):
+            continue
+        ax, ay = state["cells"][a]["position"]
+        bx, by = state["cells"][b]["position"]
+        new_len = abs(ax - bx) + abs(ay - by)
+        net["length"] = new_len
+        net["weight"] = new_len / max_length
+
+    return state            # Again, it is not necessary that we actually return state. the state parameter is passed by reference, so any mutations we already did inside the function have already happened, regardless of what we return. 
+
+def accept_move(d_cost: int, 
+                T: int, 
+                k: int, 
+                rng: random.Random) -> bool:
+    """
+    Decides whether or not to accept a proposed move. A move that does not increase cost (d_cost <= 0) is always
+    accepted. A move that increases cost is accepted probabilistically according to the boltzmann factor
+    exp(-d_cost / (k * T))
+    
+    :param d_cost: Change in cost resulting from the proposed move
+                   (new_cost - current_cost).
+    :type d_cost: int
+    :param T: Current annealing temperature. Higher values increase the
+              probability of accepting worse moves.
+    :type T: int
+    :param k: Scaling factor that controls sensitivity to cost increases.
+    :type k: int
+    :param seed: Seed for the random number generator to ensure reproducible
+                 decisions.
+    :type seed: int
+    :return: True if the move is accepted, False otherwise.
+    :rtype: bool
+    """
+    if d_cost <= 0:
+        return True
+    boltz = math.exp(-1*d_cost / (k*T))
+    r = rng.random()        # chooses random number between 0 and 1 with a seed
+    if r < boltz:
+        return True
+    else: 
+        return False
+
+
+# The next two functions were generated with chatGPT. The full conversation is/will be included in the report. All comments (not docstrings) were written by me. 
+def strip_net_length_weight(state: dict) -> dict:
+    """
+    Removes 'length' and 'weight' keys from every net dict in-place (if present).
+    Use this on best_solution right before exporting/serializing so it matches the original `data` schema.
+
+    Returns the same object for convenience.
+    """
+    for net in state.get("nets", []):
+        net.pop("length", None)         # gets rid of the length item if present
+        net.pop("weight", None)         # gets rid of the weight item if present
+    return state
+
+def verify_solution_integrity(original_state: dict, best_solution: dict) -> None:
+    """
+    Verifies that `best_solution` is a legal placement derived from `original_state` under your rules.
+
+    Checks:
+      1) Same grid_size
+      2) Same cell set; per-cell 'type' and 'fixed' flags match
+      3) Same nets (same count; each net has same 'name' and same ordered 2-tuple in 'cells')
+      4) All cell coordinates in best_solution are within grid and unique (single-occupancy)
+      5) Any cell that is fixed in original_state has identical coordinates in best_solution
+
+    Raises ValueError with a specific message if any check fails.
+    Returns None if all checks pass.
+    """
+    
+    # check if grid size matches
+    if original_state.get("grid_size") != best_solution.get("grid_size"):
+        raise ValueError(f"grid_size mismatch: {original_state.get('grid_size')} vs {best_solution.get('grid_size')}")
+
+    g = original_state["grid_size"]
+
+    orig_cells = original_state.get("cells", {})            # grabs all cell dicts in the initial state dataset
+    best_cells = best_solution.get("cells", {})             # grabs all cell dicts in the final state dataset
+
+    if set(orig_cells.keys()) != set(best_cells.keys()):                     # this condition checks that the names of the cells in orig_cells are the same as the names of the cells in best_cells
+        missing = set(orig_cells.keys()) - set(best_cells.keys())            # if there is a mismatch, this line and the following two lines identify what the mismatch is (do we have extra cells? less cells? that kind of thing.)
+        extra = set(best_cells.keys()) - set(orig_cells.keys())
+        raise ValueError(f"Cell set mismatch. Missing={sorted(missing)} Extra={sorted(extra)}")
+
+
+    for name, oc in orig_cells.items():         # loop thru each cell in orig_cells. name is the name of the cell, oc is the data of the cell
+        bc = best_cells[name]                   # grabs the data corresopnding to `name` in best_cells 
+        if oc.get("type") != bc.get("type"):
+            raise ValueError(f"Cell '{name}' type mismatch: {oc.get('type')} vs {bc.get('type')}")              # raise an error if that cell has changed type (io vs movable)
+        if oc.get("fixed") != bc.get("fixed"):
+            raise ValueError(f"Cell '{name}' fixed-flag mismatch: {oc.get('fixed')} vs {bc.get('fixed')}")      # raise an error if it has changed fixed status
+
+    orig_nets = original_state.get("nets", [])  # grabs the nets in original_state
+    best_nets = best_solution.get("nets", [])   # grabs the nets in best_solution
+
+    if len(orig_nets) != len(best_nets):
+        raise ValueError(f"Netlist length mismatch: {len(orig_nets)} vs {len(best_nets)}")                      # if the amount of nets is different, raise an error
+
+    for i, (on, bn) in enumerate(zip(orig_nets, best_nets)):    # (on, bn) is a tuple containing the net dicts corresponding to index i in the orig_nets and best_nets lists
+        if on.get("name") != bn.get("name"):
+            raise ValueError(f"Net[{i}] name mismatch: {on.get('name')} vs {bn.get('name')}")                   # if those two nets have different names, raise an error
+        if tuple(on.get("cells")) != tuple(bn.get("cells")):
+            raise ValueError(
+                f"Net[{i}] cells mismatch on net '{on.get('name')}': {on.get('cells')} vs {bn.get('cells')}"    # if those two nets dont have the same cells, raise an error. 
+            )
+
+    seen_positions: set[tuple[int, int]] = set()
+    for name, bc in best_cells.items():             # loop thru each cell in best_cells. name is the name of the cell, bc is the data of the cell
+        pos = bc.get("position")                    # grab the coordinates of that cell
+        if (not isinstance(pos, tuple)) or len(pos) != 2:
+            raise ValueError(f"Cell '{name}' has invalid position format: {pos}")                               # if the coordinates for the cell is not a tuple or does not have exactly 2 elements, raise an error
+
+        x, y = pos  # unpacks the coordintaes into x and y
+        if not (isinstance(x, int) and isinstance(y, int)):
+            raise ValueError(f"Cell '{name}' position must be ints: {pos}")                                     # raise an error if at least one of the values in the coordinate pair are not ints. 
+        if not (0 <= x < g and 0 <= y < g):
+            raise ValueError(f"Cell '{name}' out of bounds: {pos} (grid_size={g})")                             # makes sure the coordinate pair is within the bounds of the grid
+
+        if pos in seen_positions:
+            raise ValueError(f"Non-unique placement: multiple cells share position {pos}")                      # raise an error if two cells share the same coordinate
+        seen_positions.add(pos)
+
+    for name, oc in orig_cells.items():     # loop thru each cell in orig_cells. name is the name of the cell, oc is the data of the cell
+        if oc.get("fixed") is True:
+            if oc.get("position") != best_cells[name].get("position"):
+                raise ValueError(
+                    f"Fixed cell '{name}' moved: {oc.get('position')} -> {best_cells[name].get('position')}"    # raise an error if any of the fixed cells have changed position. 
+                )
+
+    print("All checks pass.")
+    return None
 
 curr_solution = annotate_net_lengths_and_weights(state)     # we start by adding length and weight fields to each net.
 #plot_placement(curr_solution)
