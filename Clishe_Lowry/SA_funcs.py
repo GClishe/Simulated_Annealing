@@ -198,6 +198,7 @@ def propose_move(state: dict,
             "target_cell": None,                # no target cell in this random choice mode (target cell is the one that cell_to_move is trying to be close to)
         }       
 
+    # if random move is not chosen, we instead choose a net probabilistically based on its length. Then a cell on that net is chosen to be moved closer to its net-neighbor. 
     rng_net = rngs['net']
     rng_cell = rngs['cell']
 
