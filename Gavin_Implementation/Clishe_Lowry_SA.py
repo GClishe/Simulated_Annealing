@@ -12,19 +12,19 @@
 
 #At the top of this file are tunable parameters. The first is the file name of the desired test (without the .py)
 #Make sure it is placed in the correct folder, and the result will appear in the corresponding separate folder as outlined above
-#In some cases we abstracted away from the standard SA parameters in favor of desired probabilities and number of temperature steps
+#In some cases we abstracted away from the standard SA parameters in favor of adaptive values and number of temperature steps
 #This allows the algorithm to scale with the problem size to some degree, as well as better control the execution time
-#This algorithm also has an advanced preturb function where good proposed moves are calculated by moving cells in a net closer together
+#This algorithm also has an advanced preturb function where good proposed moves are calculated by moving cells in bad nets closer together
 #You can tune the ratio of random vs caculated moves below, set it to 1 for completly random operation
 
 #Tunable parameters
-dataName = 'Ptest_500'    #Name of netlist file. Need to add .py to the end of provided files. Make sure original folder names are used and that result folders exist
+dataName = 'Place_5000'    #Name of netlist file. Need to add .py to the end of provided files. Make sure original folder names are used and that result folders exist
 T = 0                       #Initial temp determines probability of accepting a bad solution at the start. Leave at 0 to use calculated value based on grid size
-probEnd = 0.0000454         #Probability of accepting any bad move at the end
-tempCount = 25000           #Number of temperature steps to cycle through between initial and final temp during the geometric cooling cycle
-MOVES_PER_T_STEP = 250      #Number of moves to attempt at each temperature step
+T_min = 0.1                 #Set end temp. When set to 0 will run 25000 iterations to 0.1 then scale Tf for number of iterations
+tempCount = 2000000          #Number of temperature steps to cycle through between initial and final temp during the geometric cooling cycle. Leave at 0 for ~1 hour run on place benchmarks
+MOVES_PER_T_STEP = 250      #Number of moves to attempt at each temperature step. Suggest leaving at 250 and scaling number of temp steps instead
 K_BOLTZ = 1                 #Constant to change how the acceptance rate of bad moves is calculated. Leave this at 1 and change temperatures
-curr_random_move_chance = 1 #Percent of proposed moves that are randomly generated. Non random moves pick a random net and tries to move one of its cells as close as possible to the other
+curr_random_move_chance = 1 #Percent of proposed moves that are randomly generated. Non random moves pick a bad net and tries to move one of its cells as close as possible to the other
 MASTER_SEED = 708677375     #Set seed to make RND reproducable. Comment this line and uncomment the line right after the import block use a random seed
 
 #Set import / export folder names based on data set
@@ -64,8 +64,10 @@ rngs = {
 #Compute intial temp, final temp, and cooling rate based on desired number of temp steps, final bad move acceptance rate, and grid size
 if T == 0:                                      #If T is 0 use calculated value, if not use given value
     T = 5.9729*(data['grid_size'])**1.1874      #Calculate optimal starting temp for grid size
-T_min = -1/np.log(probEnd)
 coolRate = (T_min/T)**(1/tempCount)
+if T_min == 0:                                  #If T_min is 0 use truncated T_min 
+    coolRate = (0.1/T)**(1/25000)               
+    T_min = T*coolRate**tempCount
 
 curr_solution = annotate_net_lengths_and_weights(state)     # we start by adding length and weight fields to each net.
 #plot_placement(curr_solution)
@@ -127,6 +129,7 @@ while T > T_min:
             if current_cost < best_cost:
                 best_cost = current_cost
                 best_solution = curr_solution
+                best_iter = step_idx
     
     # below lines are for plotting
     anneal_steps.append(step_idx)
@@ -136,12 +139,22 @@ while T > T_min:
     end_costs.append(current_cost)
 
     T = cool(coolRate, T)
-
+    
 end_time = time.perf_counter()
 execution_time = end_time - start_time
+
 print(f"\nFound best cost of {best_cost} in {execution_time:.3f} sec...\n")
 
-#plot_placement(best_solution)
+#for i in range(len(end_costs)):            #Find when the result hit 99 an 99.9% to find optimal T_end
+#    if end_costs[i] < best_cost * 1.01:
+#        dead_iter = i
+#        break
+#for i in range(len(end_costs)):
+#    if end_costs[i] < best_cost * 1.001:
+#        dead_iter2 = i
+#        break    
+
+#print(f" 99% iteration {dead_iter}, 99.9% iteration {dead_iter2}, 100% iteration {best_iter}\n")
 
 best_solution = strip_net_length_weight(best_solution)
 
