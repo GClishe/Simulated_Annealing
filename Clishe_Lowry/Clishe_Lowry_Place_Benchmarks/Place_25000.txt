@@ -1,0 +1,43 @@
+
+Starting placement for Place_25000 using master seed 708677375...
+
+T0: 3224.2
+Tf: 0.100
+Boltzman Constant (K): 1.000
+Cooling Rate: 0.99999206
+Iterations Per Temp Step: 250
+Temperature Step Count: 1307328
+Random Move Chance: 1.00
+
+Initial cost is 8906514...
+
+Found best cost of 2731024 in 3097.880 sec...
+
+All checks pass.
+
+Exporting reults to ./Clishe_Lowry_Place_Benchmarks/Place_25000.py ...
+
+Graphing...
+	Command being timed: "python3 ./Clishe_Lowry_SA_Place_25000.py"
+	User time (seconds): 3103.60
+	System time (seconds): 0.40
+	Percent of CPU this job got: 99%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 51:44.28
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 915368
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 176008
+	Voluntary context switches: 423
+	Involuntary context switches: 18544
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 16296
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
