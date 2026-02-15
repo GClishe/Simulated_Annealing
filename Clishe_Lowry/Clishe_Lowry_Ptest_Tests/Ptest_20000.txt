@@ -11,7 +11,7 @@ Random Move Chance: 0.80
 
 Initial cost is 3527844...
 
-Found best cost of 65575 in 3379.472 sec...
+Found best cost of 65575 in 3462.382 sec...
 
 All checks pass.
 
@@ -19,23 +19,23 @@ Exporting reults to ./Clishe_Lowry_Ptest_Tests/Ptest_20000.py ...
 
 Graphing...
 	Command being timed: "python3 ./Clishe_Lowry_SA_Ptest_20000.py"
-	User time (seconds): 3381.19
-	System time (seconds): 0.13
+	User time (seconds): 3463.52
+	System time (seconds): 0.18
 	Percent of CPU this job got: 99%
-	Elapsed (wall clock) time (h:mm:ss or m:ss): 56:21.76
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 57:44.40
 	Average shared text size (kbytes): 0
 	Average unshared data size (kbytes): 0
 	Average stack size (kbytes): 0
 	Average total size (kbytes): 0
-	Maximum resident set size (kbytes): 358528
+	Maximum resident set size (kbytes): 342104
 	Average resident set size (kbytes): 0
 	Major (requiring I/O) page faults: 0
-	Minor (reclaiming a frame) page faults: 108576
-	Voluntary context switches: 798
-	Involuntary context switches: 16321
+	Minor (reclaiming a frame) page faults: 79516
+	Voluntary context switches: 406
+	Involuntary context switches: 19774
 	Swaps: 0
-	File system inputs: 8
-	File system outputs: 61272
+	File system inputs: 52760
+	File system outputs: 8512
 	Socket messages sent: 0
 	Socket messages received: 0
 	Signals delivered: 0
