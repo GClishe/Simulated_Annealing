@@ -766,7 +766,7 @@ axes[2].grid(True)
 axes[3].set_title("Final Cost per Annealing Step")
 axes[3].plot(anneal_steps, end_costs, label="Final cost")
 
-window = 10
+window = int(tempCount/200)
 
 moving_avg = np.convolve(end_costs, np.ones(window) / window, mode="valid")
 ma_steps = anneal_steps[window - 1:]  # align x-axis with valid convolution
