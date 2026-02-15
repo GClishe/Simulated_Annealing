@@ -1,0 +1,3 @@
+script output.txt
+/usr/bin/time -v python3 ./Clishe_Lowry_SA.py
+exit

@@ -18,10 +18,10 @@
 #You can tune the ratio of random vs caculated moves below, set it to 1 for completly random operation
 
 #Tunable parameters
-dataName = 'Place_5000'         #Name of netlist file. Need to add .py to the end of provided files. Make sure original folder names are used and that result folders exist
+dataName = 'Place_10000'         #Name of netlist file. Need to add .py to the end of provided files. Make sure original folder names are used and that result folders exist
 T = 0                           #Initial temp determines probability of accepting a bad solution at the start. Leave at 0 to use calculated value based on grid size
 T_min = 0.1                     #Set end temp. When set to 0 will run 25000 iterations to 0.1 then scale Tf for number of iterations. Recomended to leave at 0.1 instead of auto
-tempCount = 250                   #Number of temperature steps to cycle through between initial and final temp during the geometric cooling cycle. Leave at 0 for ~1 hour run on lab machines
+tempCount = 0                   #Number of temperature steps to cycle through between initial and final temp during the geometric cooling cycle. Leave at 0 for ~1 hour run on lab machines
 MOVES_PER_T_STEP = 250          #Number of moves to attempt at each temperature step. Suggest leaving at 250 and scaling number of temp steps instead
 K_BOLTZ = 1                     #Constant to change how the acceptance rate of bad moves is calculated. Leave this at 1 and change temperatures
 curr_random_move_chance = -1    #Percent of proposed moves that are randomly generated. Non random moves take longer but pick a bad net and tries to move one of its cells as close as possible to the other. -1 uses 1 for Place and 0.8 for Ptest
